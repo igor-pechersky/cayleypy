@@ -93,7 +93,7 @@ class BfsResult:
             f["graph__generator_names"] = self.graph.generator_names
             f["graph__central_state"] = self.graph.central_state
             f["graph__generators_type"] = self.graph.generators_type.value
-            
+
             if self.graph.is_permutation_group():
                 f["graph__generators"] = self.graph.generators_permutations
             else:
@@ -127,12 +127,13 @@ class BfsResult:
             # Determine generator type and create appropriate graph definition
             generator_names = [x.decode("utf-8") for x in f["graph__generator_names"][()]]
             central_state = f["graph__central_state"][()].tolist()
-            
+
             # Check if this is a new format file with generator type info
             if "graph__generators_type" in f:
                 from .cayley_graph_def import GeneratorType, MatrixGenerator
+
                 generators_type = GeneratorType(f["graph__generators_type"][()])
-                
+
                 if generators_type == GeneratorType.PERMUTATION:
                     graph = CayleyGraphDef.create(
                         generators=f["graph__generators"][()].tolist(),
@@ -142,10 +143,7 @@ class BfsResult:
                 else:  # MATRIX
                     matrices = f["graph__generator_matrices"][()]
                     moduli = f["graph__generator_moduli"][()]
-                    generators = [
-                        MatrixGenerator.create(matrices[i], moduli[i])
-                        for i in range(len(matrices))
-                    ]
+                    generators = [MatrixGenerator.create(matrices[i], moduli[i]) for i in range(len(matrices))]
                     graph = CayleyGraphDef.for_matrix_group(
                         generators=generators,
                         generator_names=generator_names,
