@@ -49,7 +49,17 @@
   - Add performance benchmarks for TPU vs CPU solving
   - _Requirements: Ensure system avoids revisiting states and handles no-solution cases_
 
-- [ ] 8. Create documentation and usage examples
+- [x] 8. Fix BfsResult persistence for matrix groups ([GitHub Issue #59](https://github.com/cayleypy/cayleypy/issues/59))
+  - Extend `BfsResult.save()` to properly serialize matrix generators and their moduli to HDF5 format
+  - Update `BfsResult.load()` to detect matrix-type graphs and use `CayleyGraphDef.for_matrix_group()` constructor
+  - Ensure matrix generator data (matrices and modulus values) are correctly saved as separate HDF5 datasets
+  - Fix graph reconstruction to create `MatrixGenerator` objects from loaded matrix data
+  - Validate `BfsResult.__eq__()` works correctly for matrix groups after save/load round-trip
+  - Add comprehensive unit tests for matrix group BFS save/load using `MatrixGroups.heisenberg()` or similar
+  - Test edge cases: matrix groups with different moduli, various matrix sizes, and BFS with all optional data
+  - _Requirements: WHEN BFS results from matrix groups are saved and loaded, THE SYSTEM SHALL preserve all data and maintain equality_
+
+- [ ] 9. Create documentation and usage examples
   - Write comprehensive API documentation for puzzle solving interface
   - Create tutorial showing how to define and solve custom puzzles
   - Document TPU setup and configuration requirements
