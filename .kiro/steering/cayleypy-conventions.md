@@ -14,6 +14,48 @@ CayleyPy is a Python library for analyzing extremely large graphs using mathemat
 - Descriptive variable names for mathematical concepts
 - PEP 8 compliance
 
+## Mandatory Pre-Commit Quality Checks
+
+**CRITICAL: Before every commit, you MUST run and fix all issues from:**
+
+1. **Code Formatting:** `black --check --diff .`
+   - Fix any formatting issues with: `black .`
+   - All files must pass Black formatting standards
+
+2. **Linting:** `./lint.sh`
+   - Must achieve 10.00/10 pylint score
+   - Fix all mypy type checking errors
+   - Address all code quality warnings
+
+3. **Testing:** `RUN_SLOW_TESTS=1 pytest`
+   - All tests must pass (no failures)
+   - New functionality requires comprehensive unit tests
+   - Performance-critical code needs benchmark tests
+   - Matrix groups: use finite moduli (avoid modulo=0)
+   - Keep test diameters small (1-3) for large state spaces
+
+**Workflow:**
+```bash
+# 1. Format code
+black .
+
+# 2. Run linting
+./lint.sh
+
+# 3. Run comprehensive tests
+RUN_SLOW_TESTS=1 pytest
+
+# 4. Only commit if all checks pass
+git add .
+git commit -m "Your commit message"
+```
+
+**Performance Guidelines for Tests:**
+- Matrix group tests: use modulo 3, 5, 7 (not 0) to keep state spaces finite
+- BFS tests: max_diameter should be 1-3 for matrix groups
+- Avoid infinite groups in automated tests
+- Test timeouts indicate performance issues that must be fixed
+
 ## Architecture Rules
 
 ### Graph Definitions

@@ -113,3 +113,18 @@ CayleyPy is a Python library for analyzing extremely large state-space graphs, p
 3. WHEN hardware acceleration fails, THE SYSTEM SHALL automatically fall back to CPU computation with appropriate logging
 4. WHEN file operations fail, THE SYSTEM SHALL provide specific error messages indicating the nature of the failure
 5. WHEN mathematical operations are invalid (e.g., non-invertible matrices), THE SYSTEM SHALL detect and report these conditions clearly
+
+### Requirement 10: Code Quality and Development Standards
+
+**User Story:** As a developer contributing to CayleyPy, I want mandatory code quality checks to ensure consistent, maintainable, and reliable code, so that the library maintains high standards and prevents regressions.
+
+#### Acceptance Criteria
+
+1. WHEN any code changes are made, THE SYSTEM SHALL require Black code formatting with 120-character line limits and all formatting checks must pass before commits
+2. WHEN code is committed, THE SYSTEM SHALL require pylint score of 10.00/10 and all mypy type checking errors must be resolved
+3. WHEN new functionality is added, THE SYSTEM SHALL require comprehensive unit tests with pytest that achieve full code coverage for the new features
+4. WHEN tests are run, THE SYSTEM SHALL execute `RUN_SLOW_TESTS=1 pytest` and all tests must pass without failures, timeouts, or memory issues
+5. WHEN matrix group functionality is tested, THE SYSTEM SHALL use finite moduli (3, 5, 7) instead of infinite groups (modulo=0) and limit BFS diameters to 1-3 to prevent performance issues
+6. WHEN performance-critical code is modified, THE SYSTEM SHALL include benchmark tests using pytest-benchmark to detect performance regressions
+7. WHEN commits are made, THE SYSTEM SHALL require the pre-commit workflow: `black .` → `./lint.sh` → `RUN_SLOW_TESTS=1 pytest` with all checks passing
+8. WHEN pylint warnings occur for intentional patterns (like import-outside-toplevel), THE SYSTEM SHALL include appropriate disable comments following existing codebase patterns
