@@ -130,7 +130,7 @@ class BfsResult:
 
             # Check if this is a new format file with generator type info
             if "graph__generators_type" in f:
-                from .cayley_graph_def import GeneratorType, MatrixGenerator
+                from .cayley_graph_def import GeneratorType, MatrixGenerator  # pylint: disable=import-outside-toplevel
 
                 generators_type = GeneratorType(f["graph__generators_type"][()])
 
