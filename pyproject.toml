@@ -9,13 +9,12 @@ version = "0.1.0"
 description = "Library for studying Cayley graphs and Schreier coset graphs"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { file = "LICENSE" }
+license = { text = "MIT" }
 authors = [{ name = "CayleyPy Foundation" }]
 
 # https://pypi.org/classifiers/
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
 
@@ -49,6 +48,11 @@ dev = [
     "coverage",
     "networkx",
     "setuptools",
+    "jupyter",
+    "jupyterlab",
+    "ipykernel",
+    "matplotlib",
+    "seaborn",
 ]
 docs = [
     # Libraries needed to build documentation.
@@ -63,6 +67,9 @@ docs = [
 
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.packages.find]
+exclude = ["notebooks*", "tests*"]
 
 [tool.setuptools.package-data]
 "cayleypy" = ["data/*.csv", "puzzles/gap_files/**"]

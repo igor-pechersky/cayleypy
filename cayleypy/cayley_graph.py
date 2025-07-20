@@ -77,7 +77,7 @@ class CayleyGraph:
         self.memory_limit_bytes = int(memory_limit_gb * (2**30))
 
         # Pick device. It will be used to store all tensors.
-        assert device in ["auto", "cpu", "cuda"]
+        assert device in ["auto", "cpu", "mps", "cuda"]
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
