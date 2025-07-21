@@ -21,8 +21,8 @@
     - Create unit tests comparing hash outputs with PyTorch implementation
     - _Requirements: 1.2, 3.2, 4.1, 5.1_
 
-- [ ] 3. Convert state encoding and decoding systems
-  - [ ] 3.1 Implement JAX string encoder
+- [-] 3. Convert state encoding and decoding systems
+  - [-] 3.1 Implement JAX string encoder
     - Convert `StringEncoder` class to use JAX arrays and operations
     - Add vectorized encoding/decoding with `jax.vmap`
     - Implement JIT compilation for encoding functions
