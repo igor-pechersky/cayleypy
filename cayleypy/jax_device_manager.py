@@ -3,7 +3,13 @@
 import logging
 import os
 import warnings
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import jax.numpy as jnp
+    JaxArray = jnp.ndarray
+else:
+    JaxArray = Any
 
 try:
     import jax
@@ -130,7 +136,7 @@ class JAXDeviceManager:
         
         return devices
 
-    def put_on_device(self, array: Union[jnp.ndarray, list, tuple], device: Optional = None) -> jnp.ndarray:
+    def put_on_device(self, array: Union[JaxArray, list, tuple], device: Optional = None) -> JaxArray:
         """Place array on specified device with automatic sharding for large arrays.
         
         Args:
@@ -152,7 +158,7 @@ class JAXDeviceManager:
         
         return jax.device_put(array, target_device)
 
-    def _should_shard_array(self, array: jnp.ndarray) -> bool:
+    def _should_shard_array(self, array: JaxArray) -> bool:
         """Determine if array should be sharded across multiple devices.
         
         Args:
@@ -165,7 +171,7 @@ class JAXDeviceManager:
         array_size_bytes = array.nbytes if hasattr(array, 'nbytes') else array.size * 8
         return array_size_bytes > 1e9 and len(self.devices) > 1
 
-    def _shard_array(self, array: jnp.ndarray) -> jnp.ndarray:
+    def _shard_array(self, array: JaxArray) -> JaxArray:
         """Shard large array across available devices.
         
         Args:
