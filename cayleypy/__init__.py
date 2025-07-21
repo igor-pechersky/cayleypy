@@ -12,11 +12,13 @@ from .puzzles import Puzzles, GapPuzzles
 # JAX/TPU support (optional)
 try:
     from .jax_device_manager import JAXDeviceManager, DeviceFallbackHandler
+    from .jax_hasher import JAXStateHasher, JAXBatchHasher
+    from .jax_hash_set import JAXHashSet
     __all__ = [
         "BeamSearchResult", "bfs_bitmask", "bfs_numpy", "BfsResult", "CayleyGraph", 
         "CayleyGraphDef", "MatrixGenerator", "load_dataset", "prepare_graph", 
         "PermutationGroups", "MatrixGroups", "Predictor", "Puzzles", "GapPuzzles",
-        "JAXDeviceManager", "DeviceFallbackHandler"
+        "JAXDeviceManager", "DeviceFallbackHandler", "JAXStateHasher", "JAXBatchHasher", "JAXHashSet"
     ]
 except ImportError:
     # JAX not available, continue without JAX support

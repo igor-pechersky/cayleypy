@@ -6,15 +6,15 @@
   - Write unit tests for device selection and memory allocation
   - _Requirements: 1.1, 1.3, 1.4, 6.1, 6.4_
 
-- [ ] 2. Implement core JAX tensor operations
-  - [ ] 2.1 Create JAX equivalents for PyTorch tensor operations
+- [x] 2. Implement core JAX tensor operations
+  - [x] 2.1 Create JAX equivalents for PyTorch tensor operations
     - Implement `unique_with_indices` function to replace `torch.unique`
     - Create `gather_along_axis` function to replace `torch.gather`
     - Implement `searchsorted_mask` function to replace `isin_via_searchsorted`
     - Write comprehensive unit tests for all tensor operations
     - _Requirements: 1.2, 7.1, 7.3_
 
-  - [ ] 2.2 Implement JAX-based state hashing system
+  - [x] 2.2 Implement JAX-based state hashing system
     - Convert `StateHasher` class from PyTorch to JAX with vectorized operations
     - Implement chunked hashing for memory efficiency on TPU
     - Add JIT compilation for hash computation functions
