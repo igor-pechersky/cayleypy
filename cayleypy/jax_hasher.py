@@ -6,7 +6,13 @@ optimized for TPU/GPU computation with vectorized operations and JIT compilation
 
 import math
 import random
-from typing import Callable, Optional, TYPE_CHECKING, Union
+from typing import Callable, Optional, TYPE_CHECKING, Union, Any
+
+if TYPE_CHECKING:
+    import jax.numpy as jnp
+    JaxArray = jnp.ndarray
+else:
+    JaxArray = Any
 
 try:
     import jax
@@ -37,7 +43,7 @@ MAX_INT = 2**62
 
 
 @jit
-def _splitmix64_jax(x: jnp.ndarray) -> jnp.ndarray:
+def _splitmix64_jax(x: JaxArray) -> JaxArray:
     """JAX implementation of SplitMix64 hash function.
     
     This is a high-quality pseudorandom number generator that's commonly used
@@ -118,7 +124,7 @@ class JAXStateHasher:
         )
 
     @jit
-    def _identity_hash(self, states: jnp.ndarray) -> jnp.ndarray:
+    def _identity_hash(self, states: JaxArray) -> JaxArray:
         """Identity hash function for single-element states.
         
         Args:
@@ -129,7 +135,7 @@ class JAXStateHasher:
         """
         return states.reshape(-1)
 
-    def _hash_dot_product(self, states: jnp.ndarray) -> jnp.ndarray:
+    def _hash_dot_product(self, states: JaxArray) -> JaxArray:
         """Hash states using dot product with random vector.
         
         Args:
@@ -149,7 +155,7 @@ class JAXStateHasher:
             )
 
     @jit
-    def _hash_dot_product_chunk(self, states: jnp.ndarray) -> jnp.ndarray:
+    def _hash_dot_product_chunk(self, states: JaxArray) -> JaxArray:
         """Hash a chunk of states using dot product.
         
         Args:
@@ -160,7 +166,7 @@ class JAXStateHasher:
         """
         return (states @ self.vec_hasher).reshape(-1)
 
-    def _hash_splitmix64(self, states: jnp.ndarray) -> jnp.ndarray:
+    def _hash_splitmix64(self, states: JaxArray) -> JaxArray:
         """Hash states using SplitMix64 algorithm.
         
         This is used for bit-encoded states to avoid hash collisions.
@@ -182,7 +188,7 @@ class JAXStateHasher:
             )
 
     @jit
-    def _hash_splitmix64_chunk(self, states: jnp.ndarray) -> jnp.ndarray:
+    def _hash_splitmix64_chunk(self, states: JaxArray) -> JaxArray:
         """Hash a chunk of states using SplitMix64.
         
         Args:
@@ -203,7 +209,7 @@ class JAXStateHasher:
         
         return h
 
-    def hash_states(self, states: jnp.ndarray) -> jnp.ndarray:
+    def hash_states(self, states: JaxArray) -> JaxArray:
         """Hash a batch of states.
         
         Args:
@@ -220,7 +226,7 @@ class JAXStateHasher:
         
         return self.make_hashes(states)
 
-    def hash_single_state(self, state: jnp.ndarray) -> int:
+    def hash_single_state(self, state: JaxArray) -> int:
         """Hash a single state.
         
         Args:
@@ -281,7 +287,7 @@ class JAXBatchHasher:
         
         return results
 
-    def hash_and_concatenate(self, state_batches: list) -> jnp.ndarray:
+    def hash_and_concatenate(self, state_batches: list) -> JaxArray:
         """Hash multiple batches and concatenate results.
         
         Args:
@@ -296,7 +302,7 @@ class JAXBatchHasher:
 
 # Vectorized hashing functions using vmap
 @jit
-def vectorized_hash_states(states: jnp.ndarray, hasher_params: dict) -> jnp.ndarray:
+def vectorized_hash_states(states: JaxArray, hasher_params: dict) -> JaxArray:
     """Vectorized state hashing using vmap.
     
     Args:
@@ -332,8 +338,8 @@ def create_hash_function(state_size: int, encoding_type: str = "regular",
     )
 
 
-def hash_state_collection(states: Union[jnp.ndarray, list], 
-                         hasher: JAXStateHasher) -> jnp.ndarray:
+def hash_state_collection(states: Union[JaxArray, list], 
+                         hasher: JAXStateHasher) -> JaxArray:
     """Hash a collection of states.
     
     Args:
@@ -357,7 +363,7 @@ def hash_state_collection(states: Union[jnp.ndarray, list],
 
 # Performance optimization utilities
 @jit
-def fast_hash_comparison(hashes1: jnp.ndarray, hashes2: jnp.ndarray) -> jnp.ndarray:
+def fast_hash_comparison(hashes1: JaxArray, hashes2: JaxArray) -> JaxArray:
     """Fast comparison of hash arrays.
     
     Args:
@@ -371,7 +377,7 @@ def fast_hash_comparison(hashes1: jnp.ndarray, hashes2: jnp.ndarray) -> jnp.ndar
 
 
 @jit
-def find_hash_duplicates(hashes: jnp.ndarray) -> tuple:
+def find_hash_duplicates(hashes: JaxArray) -> tuple:
     """Find duplicate hashes in an array.
     
     Args:
@@ -385,7 +391,7 @@ def find_hash_duplicates(hashes: jnp.ndarray) -> tuple:
 
 
 def benchmark_hash_performance(hasher: JAXStateHasher, 
-                              test_states: jnp.ndarray, 
+                              test_states: JaxArray, 
                               num_iterations: int = 10) -> dict:
     """Benchmark hash performance.
     
