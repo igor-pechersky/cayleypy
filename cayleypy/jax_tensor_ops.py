@@ -544,17 +544,26 @@ def create_sharded_array(array: JaxArray, axis: int = 0) -> JaxArray:
     """
     _check_jax_available()
     
-    if not JAX_AVAILABLE or pjit is None:
+    if not JAX_AVAILABLE or pjit is None or P is None:
         return array
     
-    # Create partition spec for sharding along specified axis
-    partition_spec = P('devices') if axis == 0 else P(None, 'devices')
-    
-    @pjit(in_axis_resources=partition_spec, out_axis_resources=partition_spec)
-    def shard_fn(x):
-        return x
-    
-    return shard_fn(array)
+    try:
+        # Create partition spec for sharding along specified axis
+        partition_spec = P('devices') if axis == 0 else P(None, 'devices')
+        
+        # Define function first
+        def shard_fn_impl(x):
+            return x
+        
+        # Apply decorator
+        shard_fn = pjit(shard_fn_impl, 
+                        in_axis_resources=partition_spec, 
+                        out_axis_resources=partition_spec)
+        
+        return shard_fn(array)
+    except Exception as e:
+        print(f"Warning: Could not create sharded array: {e}")
+        return array
 
 
 @jit
@@ -712,41 +721,51 @@ def batch_unique_with_indices(x_batch: JaxArray) -> Tuple[JaxArray, JaxArray, Ja
     return vectorized_unique(x_batch)
 
 
+# Define implementation functions first
+def _distributed_batch_matmul_impl(a: JaxArray, b: JaxArray) -> JaxArray:
+    """Implementation of distributed batch matrix multiplication."""
+    return jnp.matmul(a, b)
+
+def _distributed_sort_with_indices_impl(array: JaxArray) -> Tuple[JaxArray, JaxArray]:
+    """Implementation of distributed sorting."""
+    return sort_with_indices(array)
+
+def _distributed_isin_via_searchsorted_impl(elements: JaxArray, test_elements_sorted: JaxArray) -> JaxArray:
+    """Implementation of distributed isin operation."""
+    return isin_via_searchsorted(elements, test_elements_sorted)
+
 # TPU sharding support
-if JAX_AVAILABLE and pjit is not None:
-    @pjit(
-        in_axis_resources=(P('batch'), P('batch')),
-        out_axis_resources=P('batch')
-    )
-    def distributed_batch_matmul(a: JaxArray, b: JaxArray) -> JaxArray:
-        """Distributed batch matrix multiplication across TPU cores."""
-        return jnp.matmul(a, b)
-    
-    @pjit(
-        in_axis_resources=(P('batch'),),
-        out_axis_resources=P('batch')
-    )
-    def distributed_sort_with_indices(array: JaxArray) -> Tuple[JaxArray, JaxArray]:
-        """Distributed sorting across TPU cores."""
-        return sort_with_indices(array)
-    
-    @pjit(
-        in_axis_resources=(P('batch'), None),
-        out_axis_resources=P('batch')
-    )
-    def distributed_isin_via_searchsorted(elements: JaxArray, test_elements_sorted: JaxArray) -> JaxArray:
-        """Distributed isin operation across TPU cores."""
-        return isin_via_searchsorted(elements, test_elements_sorted)
+if JAX_AVAILABLE and pjit is not None and P is not None:
+    try:
+        # Apply decorators
+        distributed_batch_matmul = pjit(
+            _distributed_batch_matmul_impl,
+            in_axis_resources=(P('batch'), P('batch')),
+            out_axis_resources=P('batch')
+        )
+        
+        distributed_sort_with_indices = pjit(
+            _distributed_sort_with_indices_impl,
+            in_axis_resources=(P('batch'),),
+            out_axis_resources=P('batch')
+        )
+        
+        distributed_isin_via_searchsorted = pjit(
+            _distributed_isin_via_searchsorted_impl,
+            in_axis_resources=(P('batch'), None),
+            out_axis_resources=P('batch')
+        )
+    except Exception as e:
+        # If decorating fails, fall back to undecorated versions
+        print(f"Warning: Could not create pjit-decorated functions: {e}")
+        distributed_batch_matmul = _distributed_batch_matmul_impl
+        distributed_sort_with_indices = _distributed_sort_with_indices_impl
+        distributed_isin_via_searchsorted = _distributed_isin_via_searchsorted_impl
 else:
     # Fallback implementations when pjit is not available
-    def distributed_batch_matmul(a: JaxArray, b: JaxArray) -> JaxArray:
-        return batch_matmul(a, b)
-    
-    def distributed_sort_with_indices(array: JaxArray) -> Tuple[JaxArray, JaxArray]:
-        return sort_with_indices(array)
-    
-    def distributed_isin_via_searchsorted(elements: JaxArray, test_elements_sorted: JaxArray) -> JaxArray:
-        return isin_via_searchsorted(elements, test_elements_sorted)
+    distributed_batch_matmul = _distributed_batch_matmul_impl
+    distributed_sort_with_indices = _distributed_sort_with_indices_impl
+    distributed_isin_via_searchsorted = _distributed_isin_via_searchsorted_impl
 
 
 # Memory-efficient operations for large arrays

@@ -635,48 +635,55 @@ def _vectorized_splitmix64_single(state: JaxArray, seed: int) -> JaxArray:
 
 
 # TPU sharding support for large-scale hashing
-if JAX_AVAILABLE and pjit is not None:
-    @pjit(
-        in_axis_resources=(P('batch', None),),
-        out_axis_resources=P('batch')
-    )
-    def distributed_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
-        """Distributed state hashing across TPU cores."""
-        return hasher.hash_states(states)
+# Define the functions without decorators first
+def _distributed_hash_states_impl(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+    """Implementation of distributed state hashing across TPU cores."""
+    return hasher.hash_states(states)
+
+def _distributed_vectorized_hash_states_impl(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+    """Implementation of distributed vectorized hashing across TPU cores."""
+    return vectorized_hash_states(states, hasher)
+
+def _distributed_batch_hash_with_params_impl(states: JaxArray, vec_hasher: JaxArray, seed: int) -> JaxArray:
+    """Implementation of distributed batch hashing with explicit parameters."""
+    def hash_fn(state):
+        return jnp.dot(state, vec_hasher.flatten())
     
-    @pjit(
-        in_axis_resources=(P('batch', None), None),
-        out_axis_resources=P('batch')
-    )
-    def distributed_vectorized_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
-        """Distributed vectorized hashing across TPU cores."""
-        return vectorized_hash_states(states, hasher)
-    
-    @pjit(
-        in_axis_resources=(P('batch', None), None, None),
-        out_axis_resources=P('batch')
-    )
-    def distributed_batch_hash_with_params(states: JaxArray, vec_hasher: JaxArray, seed: int) -> JaxArray:
-        """Distributed batch hashing with explicit parameters."""
-        def hash_fn(state):
-            return jnp.dot(state, vec_hasher.flatten())
+    vectorized_fn = vmap(hash_fn, in_axes=0, out_axes=0)
+    return vectorized_fn(states)
+
+# Apply decorators only if JAX and pjit are available
+if JAX_AVAILABLE and pjit is not None and P is not None:
+    try:
+        # Try to create decorated versions
+        distributed_hash_states = pjit(
+            _distributed_hash_states_impl,
+            in_axis_resources=(P('batch', None),),
+            out_axis_resources=P('batch')
+        )
         
-        vectorized_fn = vmap(hash_fn, in_axes=0, out_axes=0)
-        return vectorized_fn(states)
+        distributed_vectorized_hash_states = pjit(
+            _distributed_vectorized_hash_states_impl,
+            in_axis_resources=(P('batch', None), None),
+            out_axis_resources=P('batch')
+        )
+        
+        distributed_batch_hash_with_params = pjit(
+            _distributed_batch_hash_with_params_impl,
+            in_axis_resources=(P('batch', None), None, None),
+            out_axis_resources=P('batch')
+        )
+    except Exception as e:
+        # If decorating fails, fall back to undecorated versions
+        print(f"Warning: Could not create pjit-decorated functions: {e}")
+        distributed_hash_states = _distributed_hash_states_impl
+        distributed_vectorized_hash_states = _distributed_vectorized_hash_states_impl
+        distributed_batch_hash_with_params = _distributed_batch_hash_with_params_impl
 else:
     # Fallback implementations when pjit is not available
-    def distributed_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
-        return hasher.hash_states(states)
-    
-    def distributed_vectorized_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
-        return vectorized_hash_states(states, hasher)
-    
-    def distributed_batch_hash_with_params(states: JaxArray, vec_hasher: JaxArray, seed: int) -> JaxArray:
-        def hash_fn(state):
-            return jnp.dot(state, vec_hasher.flatten())
-        
-        vectorized_fn = vmap(hash_fn, in_axes=0, out_axes=0)
-        return vectorized_fn(states)
+    distributed_hash_states = _distributed_hash_states_impl
+    distributed_vectorized_hash_states = _distributed_vectorized_hash_states_impl
+    distributed_batch_hash_with_params = _distributed_batch_hash_with_params_impl
 
 
 class OptimizedJAXStateHasher(JAXStateHasher):

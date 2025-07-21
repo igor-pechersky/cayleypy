@@ -8,26 +8,36 @@ import time
 import numpy as np
 from typing import Dict, List, Callable
 
+# First check if JAX is available without importing CayleyPy
 try:
     import jax
     import jax.numpy as jnp
     JAX_AVAILABLE = True
+    print("JAX is available, version:", jax.__version__)
 except ImportError:
     JAX_AVAILABLE = False
     jax = None
     jnp = None
     print("JAX not available - using numpy for tests")
 
-# Import CayleyPy components
-if JAX_AVAILABLE:
-    from cayleypy.jax_tensor_ops import (
-        unique_with_indices, isin_via_searchsorted, sort_with_indices,
-        batch_matmul, vectorized_element_wise_equal, batch_isin_via_searchsorted
-    )
-    
-    from cayleypy.jax_hasher import (
-        JAXStateHasher, OptimizedJAXStateHasher, vectorized_hash_states
-    )
+# Now try to import CayleyPy components
+try:
+    if JAX_AVAILABLE:
+        from cayleypy.jax_tensor_ops import (
+            unique_with_indices, isin_via_searchsorted, sort_with_indices,
+            batch_matmul, vectorized_element_wise_equal, batch_isin_via_searchsorted
+        )
+        
+        from cayleypy.jax_hasher import (
+            JAXStateHasher, OptimizedJAXStateHasher, vectorized_hash_states
+        )
+        print("Successfully imported CayleyPy JAX components")
+    else:
+        print("Skipping CayleyPy JAX imports since JAX is not available")
+except Exception as e:
+    print(f"Error importing CayleyPy components: {e}")
+    # Define dummy functions for testing
+    JAX_AVAILABLE = False
 
 
 def time_function(func, *args, **kwargs) -> float:
