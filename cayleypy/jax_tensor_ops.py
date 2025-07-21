@@ -22,6 +22,11 @@ except ImportError:
     JAX_AVAILABLE = False
     jax = None
     jnp = None
+    # Create dummy decorators when JAX is not available
+    def jit(func):
+        return func
+    def vmap(func):
+        return func
 
 
 def _check_jax_available():
