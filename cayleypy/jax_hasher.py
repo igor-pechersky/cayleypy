@@ -19,6 +19,11 @@ except ImportError:
     jax = None
     jnp = None
     jrandom = None
+    # Create dummy decorators when JAX is not available
+    def jit(func):
+        return func
+    def vmap(func):
+        return func
 
 from .jax_tensor_ops import (
     tensor_split, concatenate_arrays, stack_arrays, 
