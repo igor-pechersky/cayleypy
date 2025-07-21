@@ -618,8 +618,7 @@ def hash_gradient_checkpoint(states: JaxArray, hasher: JAXStateHasher) -> JaxArr
         return vectorized_hash_states(states_chunk, hasher)
     
     return checkpointed_hash(states)
-#
- Advanced JAX/TPU optimizations for hashing
+#Advanced JAX/TPU optimizations for hashing
 
 @jit
 def _vectorized_splitmix64_single(state: JaxArray, seed: int) -> JaxArray:
