@@ -4,8 +4,14 @@ This module provides JAX implementations of key tensor operations that replace
 PyTorch functionality, optimized for TPU/GPU computation with JIT compilation.
 """
 
-from typing import Tuple, Union, Optional
+from typing import Tuple, Union, Optional, TYPE_CHECKING, Any
 import warnings
+
+if TYPE_CHECKING:
+    import jax.numpy as jnp
+    JaxArray = jnp.ndarray
+else:
+    JaxArray = Any
 
 try:
     import jax
@@ -26,8 +32,8 @@ def _check_jax_available():
         )
 
 
-def unique_with_indices(x: jnp.ndarray, return_inverse: bool = False, return_counts: bool = False) -> Union[
-    jnp.ndarray, Tuple[jnp.ndarray, jnp.ndarray], Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]
+def unique_with_indices(x: JaxArray, return_inverse: bool = False, return_counts: bool = False) -> Union[
+    JaxArray, Tuple[JaxArray, JaxArray], Tuple[JaxArray, JaxArray, JaxArray]
 ]:
     """JAX equivalent of torch.unique with return_inverse and return_counts support.
     
@@ -93,7 +99,7 @@ def unique_with_indices(x: jnp.ndarray, return_inverse: bool = False, return_cou
     return tuple(results) if len(results) > 1 else results[0]
 
 
-def gather_along_axis(input_array: jnp.ndarray, indices: jnp.ndarray, axis: int = 1) -> jnp.ndarray:
+def gather_along_axis(input_array: JaxArray, indices: JaxArray, axis: int = 1) -> JaxArray:
     """JAX equivalent of torch.gather for gathering elements along specified axis.
     
     Args:
@@ -116,7 +122,7 @@ def gather_along_axis(input_array: jnp.ndarray, indices: jnp.ndarray, axis: int 
 
 
 @jit
-def searchsorted(sorted_sequence: jnp.ndarray, values: jnp.ndarray, side: str = 'left') -> jnp.ndarray:
+def searchsorted(sorted_sequence: JaxArray, values: JaxArray, side: str = 'left') -> JaxArray:
     """JAX equivalent of torch.searchsorted for finding insertion points.
     
     Args:
@@ -132,7 +138,7 @@ def searchsorted(sorted_sequence: jnp.ndarray, values: jnp.ndarray, side: str = 
     return jnp.searchsorted(sorted_sequence, values, side=side)
 
 
-def isin_via_searchsorted(elements: jnp.ndarray, test_elements_sorted: jnp.ndarray) -> jnp.ndarray:
+def isin_via_searchsorted(elements: JaxArray, test_elements_sorted: JaxArray) -> JaxArray:
     """JAX equivalent of the optimized isin function using searchsorted.
     
     This is a direct port of the PyTorch version for compatibility.
@@ -158,7 +164,7 @@ def isin_via_searchsorted(elements: jnp.ndarray, test_elements_sorted: jnp.ndarr
     return test_elements_sorted[indices] == elements
 
 
-def tensor_split(array: jnp.ndarray, sections: int, axis: int = 0) -> list:
+def tensor_split(array: JaxArray, sections: int, axis: int = 0) -> list:
     """JAX equivalent of torch.tensor_split.
     
     Args:
@@ -176,7 +182,7 @@ def tensor_split(array: jnp.ndarray, sections: int, axis: int = 0) -> list:
 
 
 @jit
-def sort_with_indices(array: jnp.ndarray, axis: int = -1, stable: bool = True) -> Tuple[jnp.ndarray, jnp.ndarray]:
+def sort_with_indices(array: JaxArray, axis: int = -1, stable: bool = True) -> Tuple[JaxArray, JaxArray]:
     """JAX equivalent of torch.sort returning both values and indices.
     
     Args:
@@ -195,7 +201,7 @@ def sort_with_indices(array: jnp.ndarray, axis: int = -1, stable: bool = True) -
     return sorted_values, indices
 
 
-def concatenate_arrays(arrays: list, axis: int = 0) -> jnp.ndarray:
+def concatenate_arrays(arrays: list, axis: int = 0) -> JaxArray:
     """JAX equivalent of torch.cat/torch.hstack/torch.vstack.
     
     Args:
@@ -211,7 +217,7 @@ def concatenate_arrays(arrays: list, axis: int = 0) -> jnp.ndarray:
     return jnp.concatenate(arrays, axis=axis)
 
 
-def stack_arrays(arrays: list, axis: int = 0) -> jnp.ndarray:
+def stack_arrays(arrays: list, axis: int = 0) -> JaxArray:
     """JAX equivalent of torch.stack.
     
     Args:
@@ -228,7 +234,7 @@ def stack_arrays(arrays: list, axis: int = 0) -> jnp.ndarray:
 
 
 @jit
-def zeros_like(array: jnp.ndarray, dtype: Optional[jnp.dtype] = None) -> jnp.ndarray:
+def zeros_like(array: JaxArray, dtype: Optional[Any] = None) -> JaxArray:
     """JAX equivalent of torch.zeros_like.
     
     Args:
@@ -244,7 +250,7 @@ def zeros_like(array: jnp.ndarray, dtype: Optional[jnp.dtype] = None) -> jnp.nda
 
 
 @jit
-def ones_like(array: jnp.ndarray, dtype: Optional[jnp.dtype] = None) -> jnp.ndarray:
+def ones_like(array: JaxArray, dtype: Optional[Any] = None) -> JaxArray:
     """JAX equivalent of torch.ones_like.
     
     Args:
@@ -260,7 +266,7 @@ def ones_like(array: jnp.ndarray, dtype: Optional[jnp.dtype] = None) -> jnp.ndar
 
 
 @jit
-def full_like(array: jnp.ndarray, fill_value: Union[int, float], dtype: Optional[jnp.dtype] = None) -> jnp.ndarray:
+def full_like(array: JaxArray, fill_value: Union[int, float], dtype: Optional[Any] = None) -> JaxArray:
     """JAX equivalent of torch.full_like.
     
     Args:
@@ -276,7 +282,7 @@ def full_like(array: jnp.ndarray, fill_value: Union[int, float], dtype: Optional
     return jnp.full_like(array, fill_value, dtype=dtype)
 
 
-def arange(start: int, stop: Optional[int] = None, step: int = 1, dtype: jnp.dtype = jnp.int32) -> jnp.ndarray:
+def arange(start: int, stop: Optional[int] = None, step: int = 1, dtype: Any = None) -> JaxArray:
     """JAX equivalent of torch.arange.
     
     Args:
@@ -299,7 +305,7 @@ def arange(start: int, stop: Optional[int] = None, step: int = 1, dtype: jnp.dty
 
 
 @jit
-def batch_matmul(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+def batch_matmul(a: JaxArray, b: JaxArray) -> JaxArray:
     """Vectorized batch matrix multiplication.
     
     Args:
@@ -314,7 +320,7 @@ def batch_matmul(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
     return jnp.matmul(a, b)
 
 
-def chunked_operation(array: jnp.ndarray, operation_fn, chunk_size: int = 2**18) -> jnp.ndarray:
+def chunked_operation(array: JaxArray, operation_fn, chunk_size: int = 2**18) -> JaxArray:
     """Apply operation to array in chunks for memory efficiency.
     
     Args:
@@ -340,7 +346,7 @@ def chunked_operation(array: jnp.ndarray, operation_fn, chunk_size: int = 2**18)
     return jnp.concatenate(results, axis=0)
 
 
-def to_jax_array(data, dtype: Optional[jnp.dtype] = None) -> jnp.ndarray:
+def to_jax_array(data, dtype: Optional[Any] = None) -> JaxArray:
     """Convert various data types to JAX arrays.
     
     Args:
@@ -355,7 +361,7 @@ def to_jax_array(data, dtype: Optional[jnp.dtype] = None) -> jnp.ndarray:
     return jnp.array(data, dtype=dtype)
 
 
-def ensure_jax_array(data) -> jnp.ndarray:
+def ensure_jax_array(data) -> JaxArray:
     """Ensure input is a JAX array, converting if necessary.
     
     Args:
@@ -372,7 +378,7 @@ def ensure_jax_array(data) -> jnp.ndarray:
 
 
 @jit
-def advanced_indexing(array: jnp.ndarray, indices: tuple) -> jnp.ndarray:
+def advanced_indexing(array: JaxArray, indices: tuple) -> JaxArray:
     """Advanced indexing operation for JAX arrays.
     
     Args:
@@ -387,7 +393,7 @@ def advanced_indexing(array: jnp.ndarray, indices: tuple) -> jnp.ndarray:
     return array[indices]
 
 
-def boolean_indexing(array: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
+def boolean_indexing(array: JaxArray, mask: JaxArray) -> JaxArray:
     """Boolean indexing for JAX arrays.
     
     Args:
@@ -405,7 +411,7 @@ def boolean_indexing(array: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
 
 
 @jit
-def element_wise_equal(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+def element_wise_equal(a: JaxArray, b: JaxArray) -> JaxArray:
     """Element-wise equality comparison.
     
     Args:
@@ -421,7 +427,7 @@ def element_wise_equal(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
 
 
 @jit
-def element_wise_not_equal(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+def element_wise_not_equal(a: JaxArray, b: JaxArray) -> JaxArray:
     """Element-wise inequality comparison.
     
     Args:
@@ -437,7 +443,7 @@ def element_wise_not_equal(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
 
 
 @jit
-def logical_and(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+def logical_and(a: JaxArray, b: JaxArray) -> JaxArray:
     """Element-wise logical AND.
     
     Args:
@@ -453,7 +459,7 @@ def logical_and(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
 
 
 @jit
-def logical_or(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+def logical_or(a: JaxArray, b: JaxArray) -> JaxArray:
     """Element-wise logical OR.
     
     Args:
@@ -469,7 +475,7 @@ def logical_or(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
 
 
 @jit
-def logical_not(a: jnp.ndarray) -> jnp.ndarray:
+def logical_not(a: JaxArray) -> JaxArray:
     """Element-wise logical NOT.
     
     Args:
