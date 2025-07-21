@@ -4,8 +4,14 @@ This module provides a JAX equivalent of the TorchHashSet class,
 optimized for TPU/GPU computation with vectorized operations.
 """
 
-from typing import List
+from typing import List, TYPE_CHECKING, Any
 import warnings
+
+if TYPE_CHECKING:
+    import jax.numpy as jnp
+    JaxArray = jnp.ndarray
+else:
+    JaxArray = Any
 
 try:
     import jax
@@ -16,6 +22,9 @@ except ImportError:
     JAX_AVAILABLE = False
     jax = None
     jnp = None
+    # Create dummy decorators when JAX is not available
+    def jit(func):
+        return func
 
 from .jax_tensor_ops import isin_via_searchsorted, sort_with_indices, concatenate_arrays
 
@@ -38,10 +47,10 @@ class JAXHashSet:
                 "JAX is not available. Install with: pip install jax[tpu] or pip install jax[cuda]"
             )
         
-        self.data: List[jnp.ndarray] = []
+        self.data: List[JaxArray] = []
         self.max_segments = max_segments
 
-    def add_sorted_hashes(self, sorted_numbers: jnp.ndarray) -> None:
+    def add_sorted_hashes(self, sorted_numbers: JaxArray) -> None:
         """Add sorted hash values to the set.
         
         IMPORTANT: Assumes that new numbers are sorted and do not appear in the set before.
@@ -73,7 +82,7 @@ class JAXHashSet:
         # Replace all segments with single consolidated segment
         self.data = [sorted_data]
 
-    def get_mask_to_remove_seen_hashes(self, x: jnp.ndarray) -> jnp.ndarray:
+    def get_mask_to_remove_seen_hashes(self, x: JaxArray) -> JaxArray:
         """Get boolean mask indicating which elements in x are NOT in the set.
         
         This is used to filter out previously seen hash values.
@@ -100,7 +109,7 @@ class JAXHashSet:
         
         return mask
 
-    def contains(self, x: jnp.ndarray) -> jnp.ndarray:
+    def contains(self, x: JaxArray) -> JaxArray:
         """Check if elements are contained in the set.
         
         Args:
@@ -148,7 +157,7 @@ class JAXHashSet:
         """Clear all elements from the set."""
         self.data = []
 
-    def get_all_elements(self) -> jnp.ndarray:
+    def get_all_elements(self) -> JaxArray:
         """Get all elements in the set as a sorted array.
         
         Returns:
@@ -272,7 +281,7 @@ class JAXHashSet:
 
 
 # Utility functions for working with JAXHashSet
-def create_hash_set_from_array(array: jnp.ndarray, max_segments: int = 10) -> JAXHashSet:
+def create_hash_set_from_array(array: JaxArray, max_segments: int = 10) -> JAXHashSet:
     """Create a JAXHashSet from an array of values.
     
     Args:
