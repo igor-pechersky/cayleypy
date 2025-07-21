@@ -26,7 +26,6 @@ def _check_jax_available():
         )
 
 
-@jit
 def unique_with_indices(x: jnp.ndarray, return_inverse: bool = False, return_counts: bool = False) -> Union[
     jnp.ndarray, Tuple[jnp.ndarray, jnp.ndarray], Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]
 ]:
@@ -44,64 +43,56 @@ def unique_with_indices(x: jnp.ndarray, return_inverse: bool = False, return_cou
     """
     _check_jax_available()
     
-    # Flatten input for processing
-    x_flat = x.flatten()
+    # Use JAX's built-in unique for simple case
+    if not return_inverse and not return_counts:
+        return jnp.unique(x)
     
-    # Sort the array and get sort indices
+    # For complex cases, avoid JIT to handle dynamic shapes
+    x_flat = x.flatten()
     sorted_indices = jnp.argsort(x_flat)
     sorted_values = x_flat[sorted_indices]
     
-    # Find unique elements by comparing adjacent sorted values
     if len(sorted_values) == 0:
-        unique_values = jnp.array([], dtype=x.dtype)
+        empty_vals = jnp.array([], dtype=x.dtype)
+        empty_indices = jnp.array([], dtype=jnp.int32)
         if return_inverse and return_counts:
-            return unique_values, jnp.array([], dtype=jnp.int32), jnp.array([], dtype=jnp.int32)
+            return empty_vals, empty_indices, empty_indices
         elif return_inverse:
-            return unique_values, jnp.array([], dtype=jnp.int32)
+            return empty_vals, empty_indices
         elif return_counts:
-            return unique_values, jnp.array([], dtype=jnp.int32)
-        return unique_values
+            return empty_vals, empty_indices
+        else:
+            return empty_vals
     
-    # Create mask for unique elements (first occurrence of each value)
-    unique_mask = jnp.concatenate([
-        jnp.array([True]),  # First element is always unique
-        sorted_values[1:] != sorted_values[:-1]  # Different from previous
+    # Find unique elements
+    diff_mask = jnp.concatenate([
+        jnp.array([True]),
+        sorted_values[1:] != sorted_values[:-1]
     ])
     
-    # Get unique values
-    unique_values = sorted_values[unique_mask]
+    # Use jnp.where with size parameter to avoid dynamic shapes
+    unique_positions = jnp.where(diff_mask)[0]
+    unique_values = sorted_values[unique_positions]
     
-    if not return_inverse and not return_counts:
-        return unique_values
+    results = [unique_values]
     
-    # Compute inverse indices if requested
-    inverse_indices = None
     if return_inverse:
-        # Map each original element to its unique index
-        unique_indices = jnp.cumsum(unique_mask) - 1
-        inverse_indices = jnp.empty_like(x_flat, dtype=jnp.int32)
-        inverse_indices = inverse_indices.at[sorted_indices].set(unique_indices)
+        # Create inverse mapping
+        cumsum_mask = jnp.cumsum(diff_mask) - 1
+        inverse_indices = jnp.zeros_like(x_flat, dtype=jnp.int32)
+        inverse_indices = inverse_indices.at[sorted_indices].set(cumsum_mask)
         inverse_indices = inverse_indices.reshape(x.shape)
+        results.append(inverse_indices)
     
-    # Compute counts if requested
-    counts = None
     if return_counts:
-        # Count occurrences of each unique element
-        unique_positions = jnp.where(unique_mask)[0]
-        counts = jnp.diff(jnp.concatenate([unique_positions, jnp.array([len(sorted_values)])]))
+        # Calculate counts
+        next_positions = jnp.concatenate([unique_positions[1:], jnp.array([len(sorted_values)])])
+        counts = next_positions - unique_positions
+        results.append(counts)
     
-    # Return appropriate combination
-    if return_inverse and return_counts:
-        return unique_values, inverse_indices, counts
-    elif return_inverse:
-        return unique_values, inverse_indices
-    elif return_counts:
-        return unique_values, counts
-    else:
-        return unique_values
+    return tuple(results) if len(results) > 1 else results[0]
 
 
-@jit
 def gather_along_axis(input_array: jnp.ndarray, indices: jnp.ndarray, axis: int = 1) -> jnp.ndarray:
     """JAX equivalent of torch.gather for gathering elements along specified axis.
     
@@ -115,24 +106,13 @@ def gather_along_axis(input_array: jnp.ndarray, indices: jnp.ndarray, axis: int 
     """
     _check_jax_available()
     
-    if axis == 1 and input_array.ndim == 2:
-        # Optimized path for common 2D case with axis=1
-        batch_indices = jnp.arange(input_array.shape[0])[:, None]
-        return input_array[batch_indices, indices]
-    else:
-        # General case using advanced indexing
-        # Create index arrays for all dimensions
-        index_arrays = []
-        for i in range(input_array.ndim):
-            if i == axis:
-                index_arrays.append(indices)
-            else:
-                # Create broadcasting indices for other dimensions
-                shape = [1] * input_array.ndim
-                shape[i] = input_array.shape[i]
-                index_arrays.append(jnp.arange(input_array.shape[i]).reshape(shape))
-        
-        return input_array[tuple(index_arrays)]
+    # Remove JIT to avoid tracer issues with dynamic axis
+    # Handle negative axis
+    if axis < 0:
+        axis = input_array.ndim + axis
+    
+    # Use jnp.take_along_axis which is designed for this purpose
+    return jnp.take_along_axis(input_array, indices, axis=axis)
 
 
 @jit
@@ -167,20 +147,20 @@ def isin_via_searchsorted(elements: jnp.ndarray, test_elements_sorted: jnp.ndarr
     """
     _check_jax_available()
     
-    if len(test_elements_sorted) == 0:
+    def empty_case():
         return jnp.zeros_like(elements, dtype=bool)
     
-    # Find insertion points
-    indices = jnp.searchsorted(test_elements_sorted, elements)
+    def non_empty_case():
+        # Find insertion points
+        indices = jnp.searchsorted(test_elements_sorted, elements)
+        # Clamp indices to valid range
+        indices = jnp.clip(indices, 0, len(test_elements_sorted) - 1)
+        # Check if elements match at insertion points
+        return test_elements_sorted[indices] == elements
     
-    # Clamp indices to valid range
-    indices = jnp.clip(indices, 0, len(test_elements_sorted) - 1)
-    
-    # Check if elements match at insertion points
-    return test_elements_sorted[indices] == elements
+    return jax.lax.cond(len(test_elements_sorted) == 0, empty_case, non_empty_case)
 
 
-@jit
 def tensor_split(array: jnp.ndarray, sections: int, axis: int = 0) -> list:
     """JAX equivalent of torch.tensor_split.
     
@@ -194,6 +174,7 @@ def tensor_split(array: jnp.ndarray, sections: int, axis: int = 0) -> list:
     """
     _check_jax_available()
     
+    # Remove JIT to avoid concrete value requirements
     return jnp.array_split(array, sections, axis=axis)
 
 
@@ -217,7 +198,6 @@ def sort_with_indices(array: jnp.ndarray, axis: int = -1, stable: bool = True) -
     return sorted_values, indices
 
 
-@jit
 def concatenate_arrays(arrays: list, axis: int = 0) -> jnp.ndarray:
     """JAX equivalent of torch.cat/torch.hstack/torch.vstack.
     
@@ -230,10 +210,10 @@ def concatenate_arrays(arrays: list, axis: int = 0) -> jnp.ndarray:
     """
     _check_jax_available()
     
+    # Remove JIT to avoid tracer issues
     return jnp.concatenate(arrays, axis=axis)
 
 
-@jit
 def stack_arrays(arrays: list, axis: int = 0) -> jnp.ndarray:
     """JAX equivalent of torch.stack.
     
@@ -246,6 +226,7 @@ def stack_arrays(arrays: list, axis: int = 0) -> jnp.ndarray:
     """
     _check_jax_available()
     
+    # Remove JIT to avoid tracer issues
     return jnp.stack(arrays, axis=axis)
 
 
@@ -298,7 +279,6 @@ def full_like(array: jnp.ndarray, fill_value: Union[int, float], dtype: Optional
     return jnp.full_like(array, fill_value, dtype=dtype)
 
 
-@jit
 def arange(start: int, stop: Optional[int] = None, step: int = 1, dtype: jnp.dtype = jnp.int32) -> jnp.ndarray:
     """JAX equivalent of torch.arange.
     
@@ -313,6 +293,7 @@ def arange(start: int, stop: Optional[int] = None, step: int = 1, dtype: jnp.dty
     """
     _check_jax_available()
     
+    # Remove JIT to avoid concrete value requirements
     if stop is None:
         stop = start
         start = 0
@@ -320,7 +301,6 @@ def arange(start: int, stop: Optional[int] = None, step: int = 1, dtype: jnp.dty
     return jnp.arange(start, stop, step, dtype=dtype)
 
 
-# Vectorized operations using vmap
 @jit
 def batch_matmul(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
     """Vectorized batch matrix multiplication.
@@ -337,7 +317,6 @@ def batch_matmul(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
     return jnp.matmul(a, b)
 
 
-# Memory-efficient operations for large arrays
 def chunked_operation(array: jnp.ndarray, operation_fn, chunk_size: int = 2**18) -> jnp.ndarray:
     """Apply operation to array in chunks for memory efficiency.
     
@@ -364,7 +343,6 @@ def chunked_operation(array: jnp.ndarray, operation_fn, chunk_size: int = 2**18)
     return jnp.concatenate(results, axis=0)
 
 
-# Utility functions for type conversion and device placement
 def to_jax_array(data, dtype: Optional[jnp.dtype] = None) -> jnp.ndarray:
     """Convert various data types to JAX arrays.
     
@@ -396,7 +374,6 @@ def ensure_jax_array(data) -> jnp.ndarray:
     return jnp.array(data)
 
 
-# Advanced indexing operations
 @jit
 def advanced_indexing(array: jnp.ndarray, indices: tuple) -> jnp.ndarray:
     """Advanced indexing operation for JAX arrays.
@@ -413,7 +390,6 @@ def advanced_indexing(array: jnp.ndarray, indices: tuple) -> jnp.ndarray:
     return array[indices]
 
 
-@jit
 def boolean_indexing(array: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
     """Boolean indexing for JAX arrays.
     
@@ -426,10 +402,11 @@ def boolean_indexing(array: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
     """
     _check_jax_available()
     
-    return array[mask]
+    # Use jnp.where to avoid boolean indexing issues
+    indices = jnp.where(mask)[0]
+    return array[indices]
 
 
-# Comparison and logical operations
 @jit
 def element_wise_equal(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
     """Element-wise equality comparison.

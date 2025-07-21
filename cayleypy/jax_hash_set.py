@@ -59,7 +59,6 @@ class JAXHashSet:
         if len(self.data) >= self.max_segments:
             self._consolidate_segments()
 
-    @jit
     def _consolidate_segments(self) -> None:
         """Consolidate all segments into a single sorted array."""
         if len(self.data) <= 1:
