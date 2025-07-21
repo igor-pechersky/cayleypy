@@ -35,6 +35,11 @@ torch = [
     # it has torch installed.
     "torch"
 ]
+jax = [
+    # JAX with TPU support for high-performance computation
+    "jax[tpu]>=0.4.0",
+    # Alternative CPU/GPU installation: "jax[cpu]" or "jax[cuda]"
+]
 lint = [
     "black",
     "mypy==1.15.0",
@@ -88,6 +93,9 @@ module = ["scipy.*"]
 ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["h5py.*"]
+ignore_missing_imports = true
+[[tool.mypy.overrides]]
+module = ["jax.*"]
 ignore_missing_imports = true
 
 [tool.pylint."FORMAT"]
