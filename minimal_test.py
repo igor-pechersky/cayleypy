@@ -12,6 +12,7 @@ print("Testing JAX availability...")
 # Check if JAX is available
 try:
     import jax
+    jax.config.update("jax_enable_x64", True)
     import jax.numpy as jnp
     JAX_AVAILABLE = True
     print(f"JAX is available, version: {jax.__version__}")

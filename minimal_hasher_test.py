@@ -12,6 +12,7 @@ print("Testing JAX availability...")
 # Check if JAX is available
 try:
     import jax
+    jax.config.update("jax_enable_x64", True)
     import jax.numpy as jnp
     from jax import jit, vmap
     import jax.random as jrandom
@@ -56,15 +57,19 @@ class SimpleJAXHasher:
         self.vec_hasher = jrandom.randint(
             key, 
             shape=(self.state_size, 1), 
-            minval=-(2**31), 
+            minval=-(2**31),  # Use full int64 range now that x64 is enabled
             maxval=2**31,
-            dtype=jnp.int64
+            dtype=jnp.int64  # Use int64 now that x64 is enabled
         )
     
-    @jit
     def _hash_dot_product_chunk(self, states):
         """Hash a chunk of states using dot product."""
-        return (states @ self.vec_hasher).reshape(-1)
+        # Create a JIT-compiled function that captures vec_hasher
+        @jit
+        def _hash_fn(states, vec_hasher):
+            return (states @ vec_hasher).reshape(-1)
+        
+        return _hash_fn(states, self.vec_hasher)
     
     def hash_states(self, states):
         """Hash a batch of states."""
