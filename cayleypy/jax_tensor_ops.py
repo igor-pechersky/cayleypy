@@ -132,7 +132,6 @@ def searchsorted(sorted_sequence: jnp.ndarray, values: jnp.ndarray, side: str = 
     return jnp.searchsorted(sorted_sequence, values, side=side)
 
 
-@jit
 def isin_via_searchsorted(elements: jnp.ndarray, test_elements_sorted: jnp.ndarray) -> jnp.ndarray:
     """JAX equivalent of the optimized isin function using searchsorted.
     
@@ -147,18 +146,16 @@ def isin_via_searchsorted(elements: jnp.ndarray, test_elements_sorted: jnp.ndarr
     """
     _check_jax_available()
     
-    def empty_case():
+    # Handle empty test_elements case directly
+    if len(test_elements_sorted) == 0:
         return jnp.zeros_like(elements, dtype=bool)
     
-    def non_empty_case():
-        # Find insertion points
-        indices = jnp.searchsorted(test_elements_sorted, elements)
-        # Clamp indices to valid range
-        indices = jnp.clip(indices, 0, len(test_elements_sorted) - 1)
-        # Check if elements match at insertion points
-        return test_elements_sorted[indices] == elements
-    
-    return jax.lax.cond(len(test_elements_sorted) == 0, empty_case, non_empty_case)
+    # Find insertion points
+    indices = jnp.searchsorted(test_elements_sorted, elements)
+    # Clamp indices to valid range
+    indices = jnp.clip(indices, 0, len(test_elements_sorted) - 1)
+    # Check if elements match at insertion points
+    return test_elements_sorted[indices] == elements
 
 
 def tensor_split(array: jnp.ndarray, sections: int, axis: int = 0) -> list:
