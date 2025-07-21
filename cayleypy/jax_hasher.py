@@ -17,14 +17,19 @@ else:
 try:
     import jax
     import jax.numpy as jnp
-    from jax import jit, vmap
+    from jax import jit, vmap, lax
     import jax.random as jrandom
+    from jax.experimental import pjit
+    from jax.experimental.pjit import PartitionSpec as P
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
     jax = None
     jnp = None
     jrandom = None
+    lax = None
+    pjit = None
+    P = None
     # Create dummy decorators when JAX is not available
     def jit(func):
         return func
@@ -158,13 +163,17 @@ class JAXStateHasher:
     def _hash_dot_product_chunk(self, states: JaxArray) -> JaxArray:
         """Hash a chunk of states using dot product.
         
+        Optimized with vectorized operations for TPU efficiency.
+        
         Args:
             states: Chunk of states
             
         Returns:
             Hash values for the chunk
         """
-        return (states @ self.vec_hasher).reshape(-1)
+        # Use vectorized dot product for better TPU utilization
+        vectorized_dot = vmap(lambda state: jnp.dot(state, self.vec_hasher.flatten()))
+        return vectorized_dot(states)
 
     def _hash_splitmix64(self, states: JaxArray) -> JaxArray:
         """Hash states using SplitMix64 algorithm.
@@ -191,6 +200,8 @@ class JAXStateHasher:
     def _hash_splitmix64_chunk(self, states: JaxArray) -> JaxArray:
         """Hash a chunk of states using SplitMix64.
         
+        Optimized with lax.scan for better TPU performance.
+        
         Args:
             states: Chunk of states of shape (batch_size, state_size)
             
@@ -199,18 +210,20 @@ class JAXStateHasher:
         """
         batch_size, state_size = states.shape
         
+        # Use lax.scan for efficient iteration over state elements
+        def scan_fn(h_carry, i):
+            h_new = h_carry ^ _splitmix64_jax(states[:, i])
+            h_new = h_new * 0x85EBCA6B
+            return h_new, None
+        
         # Initialize hash with seed
-        h = jnp.full((batch_size,), self.seed, dtype=jnp.int64)
+        h_init = jnp.full((batch_size,), self.seed, dtype=jnp.int64)
+        final_h, _ = lax.scan(scan_fn, h_init, jnp.arange(state_size))
         
-        # Process each element of the state vector
-        for i in range(state_size):
-            h = h ^ _splitmix64_jax(states[:, i])
-            h = h * 0x85EBCA6B
-        
-        return h
+        return final_h
 
     def hash_states(self, states: JaxArray) -> JaxArray:
-        """Hash a batch of states.
+        """Hash a batch of states with TPU optimizations.
         
         Args:
             states: States to hash, shape (batch_size, state_size)
@@ -224,7 +237,11 @@ class JAXStateHasher:
         elif states.ndim > 2:
             states = states.reshape(-1, self.state_size)
         
-        return self.make_hashes(states)
+        # Use vectorized hashing for better TPU performance
+        if states.shape[0] > 1:
+            return vectorized_hash_states(states, self)
+        else:
+            return self.make_hashes(states)
 
     def hash_single_state(self, state: JaxArray) -> int:
         """Hash a single state.
@@ -302,19 +319,105 @@ class JAXBatchHasher:
 
 # Vectorized hashing functions using vmap
 @jit
-def vectorized_hash_states(states: JaxArray, hasher_params: dict) -> JaxArray:
-    """Vectorized state hashing using vmap.
+def vectorized_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+    """Vectorized state hashing using vmap for maximum TPU efficiency.
     
     Args:
-        states: Batch of states
-        hasher_params: Parameters for hashing
+        states: Batch of states, shape (batch_size, state_size)
+        hasher: JAXStateHasher instance
         
     Returns:
-        Hash values
+        Hash values, shape (batch_size,)
     """
-    # This would be implemented with vmap for maximum vectorization
-    # For now, we'll use the batch processing approach
-    pass
+    _check_jax_available()
+    
+    def single_state_hash(state):
+        """Hash a single state vector."""
+        if hasher.is_identity:
+            return state[0] if len(state) > 0 else 0
+        elif hasher.use_string_encoder:
+            return _vectorized_splitmix64_single(state, hasher.seed)
+        else:
+            return jnp.dot(state, hasher.vec_hasher.flatten())
+    
+    # Use vmap for efficient vectorization across batch dimension
+    vectorized_fn = vmap(single_state_hash, in_axes=0, out_axes=0)
+    return vectorized_fn(states)
+
+
+@jit
+def _vectorized_splitmix64_single(state: JaxArray, seed: int) -> int:
+    """Vectorized SplitMix64 hash for a single state."""
+    h = seed
+    
+    def hash_element(carry, x):
+        h = carry ^ _splitmix64_jax(x)
+        h = h * 0x85EBCA6B
+        return h, None
+    
+    final_h, _ = lax.scan(hash_element, h, state)
+    return final_h
+
+
+# TPU-optimized distributed hashing
+@pjit(
+    in_axis_resources=(P('batch', None), P()),
+    out_axis_resources=P('batch')
+)
+def distributed_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+    """Distributed state hashing across TPU cores.
+    
+    Args:
+        states: Batch of states sharded across devices
+        hasher: JAXStateHasher instance
+        
+    Returns:
+        Hash values distributed across devices
+    """
+    if not JAX_AVAILABLE or pjit is None:
+        return hasher.hash_states(states)
+    
+    return vectorized_hash_states(states, hasher)
+
+
+# Memory-efficient batch processing
+@jit
+def memory_efficient_batch_hash(states: JaxArray, hasher: JAXStateHasher, 
+                               max_batch_size: int = 2**16) -> JaxArray:
+    """Memory-efficient batch hashing with automatic chunking.
+    
+    Args:
+        states: Large batch of states
+        hasher: JAXStateHasher instance
+        max_batch_size: Maximum batch size per chunk
+        
+    Returns:
+        Hash values for all states
+    """
+    _check_jax_available()
+    
+    def process_chunk(chunk):
+        return vectorized_hash_states(chunk, hasher)
+    
+    batch_size = states.shape[0]
+    
+    if batch_size <= max_batch_size:
+        return process_chunk(states)
+    else:
+        # Use lax.map for efficient chunked processing
+        num_chunks = (batch_size + max_batch_size - 1) // max_batch_size
+        chunks = jnp.array_split(states, num_chunks, axis=0)
+        chunk_array = jnp.stack([jnp.pad(chunk, ((0, max_batch_size - chunk.shape[0]), (0, 0))) 
+                                for chunk in chunks])
+        
+        results = lax.map(process_chunk, chunk_array)
+        
+        # Remove padding and concatenate
+        valid_results = []
+        for i, chunk in enumerate(chunks):
+            valid_results.append(results[i][:chunk.shape[0]])
+        
+        return jnp.concatenate(valid_results, axis=0)
 
 
 # Utility functions for hash management
@@ -392,27 +495,35 @@ def find_hash_duplicates(hashes: JaxArray) -> tuple:
 
 def benchmark_hash_performance(hasher: JAXStateHasher, 
                               test_states: JaxArray, 
-                              num_iterations: int = 10) -> dict:
-    """Benchmark hash performance.
+                              num_iterations: int = 10,
+                              use_distributed: bool = False) -> dict:
+    """Benchmark hash performance with TPU optimization options.
     
     Args:
         hasher: Hasher to benchmark
         test_states: Test states for benchmarking
         num_iterations: Number of iterations to run
+        use_distributed: Whether to use distributed TPU hashing
         
     Returns:
         Performance statistics
     """
     import time
     
+    # Choose hashing function based on options
+    if use_distributed and JAX_AVAILABLE and pjit is not None:
+        hash_fn = lambda states: distributed_hash_states(states, hasher)
+    else:
+        hash_fn = lambda states: vectorized_hash_states(states, hasher)
+    
     # Warm up JIT compilation
-    _ = hasher.hash_states(test_states[:100])
+    _ = hash_fn(test_states[:100])
     
     # Benchmark
     times = []
     for _ in range(num_iterations):
         start_time = time.time()
-        _ = hasher.hash_states(test_states)
+        _ = hash_fn(test_states)
         end_time = time.time()
         times.append(end_time - start_time)
     
@@ -420,5 +531,326 @@ def benchmark_hash_performance(hasher: JAXStateHasher,
         "mean_time": sum(times) / len(times),
         "min_time": min(times),
         "max_time": max(times),
+        "states_per_second": len(test_states) / (sum(times) / len(times)),
+        "method": "distributed" if use_distributed else "vectorized"
+    }
+
+
+# Advanced TPU optimization utilities
+class TPUOptimizedHasher:
+    """TPU-optimized wrapper for JAXStateHasher with advanced features."""
+    
+    def __init__(self, base_hasher: JAXStateHasher, enable_sharding: bool = True):
+        """Initialize TPU-optimized hasher.
+        
+        Args:
+            base_hasher: Base JAXStateHasher instance
+            enable_sharding: Whether to enable automatic sharding
+        """
+        self.base_hasher = base_hasher
+        self.enable_sharding = enable_sharding and JAX_AVAILABLE and pjit is not None
+        
+        # Pre-compile hash functions for different batch sizes
+        self._compile_hash_functions()
+    
+    def _compile_hash_functions(self):
+        """Pre-compile hash functions for common batch sizes."""
+        if not JAX_AVAILABLE:
+            return
+        
+        # Common batch sizes for pre-compilation
+        batch_sizes = [1, 32, 128, 512, 2048, 8192]
+        
+        for batch_size in batch_sizes:
+            dummy_states = jnp.zeros((batch_size, self.base_hasher.state_size))
+            # Trigger JIT compilation
+            _ = self.hash_states(dummy_states)
+    
+    @jit
+    def hash_states(self, states: JaxArray) -> JaxArray:
+        """Hash states with TPU optimizations.
+        
+        Args:
+            states: States to hash
+            
+        Returns:
+            Hash values
+        """
+        if self.enable_sharding:
+            return distributed_hash_states(states, self.base_hasher)
+        else:
+            return vectorized_hash_states(states, self.base_hasher)
+    
+    @jit
+    def hash_states_chunked(self, states: JaxArray, chunk_size: int = 2**16) -> JaxArray:
+        """Hash states with memory-efficient chunking.
+        
+        Args:
+            states: States to hash
+            chunk_size: Size of processing chunks
+            
+        Returns:
+            Hash values
+        """
+        return memory_efficient_batch_hash(states, self.base_hasher, chunk_size)
+
+
+# Gradient-based hash optimization (for advanced use cases)
+@jit
+def hash_gradient_checkpoint(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+    """Hash states with gradient checkpointing for memory efficiency.
+    
+    Args:
+        states: States to hash
+        hasher: JAXStateHasher instance
+        
+    Returns:
+        Hash values with gradient checkpointing
+    """
+    if not JAX_AVAILABLE:
+        return hasher.hash_states(states)
+    
+    # Use gradient checkpointing for memory-intensive operations
+    from jax.experimental import checkpoint
+    
+    @checkpoint
+    def checkpointed_hash(states_chunk):
+        return vectorized_hash_states(states_chunk, hasher)
+    
+    return checkpointed_hash(states)
+#
+ Advanced JAX/TPU optimizations for hashing
+
+@jit
+def _vectorized_splitmix64_single(state: JaxArray, seed: int) -> JaxArray:
+    """Vectorized SplitMix64 for a single state using lax.scan."""
+    h = jnp.array(seed, dtype=jnp.int64)
+    
+    def scan_fn(h_carry, x_i):
+        h_new = h_carry ^ _splitmix64_jax(x_i)
+        h_new = h_new * 0x85EBCA6B
+        return h_new, None
+    
+    final_h, _ = lax.scan(scan_fn, h, state)
+    return final_h
+
+
+# TPU sharding support for large-scale hashing
+if JAX_AVAILABLE and pjit is not None:
+    @pjit(
+        in_axis_resources=(P('batch', None),),
+        out_axis_resources=P('batch')
+    )
+    def distributed_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+        """Distributed state hashing across TPU cores."""
+        return hasher.hash_states(states)
+    
+    @pjit(
+        in_axis_resources=(P('batch', None), None),
+        out_axis_resources=P('batch')
+    )
+    def distributed_vectorized_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+        """Distributed vectorized hashing across TPU cores."""
+        return vectorized_hash_states(states, hasher)
+    
+    @pjit(
+        in_axis_resources=(P('batch', None), None, None),
+        out_axis_resources=P('batch')
+    )
+    def distributed_batch_hash_with_params(states: JaxArray, vec_hasher: JaxArray, seed: int) -> JaxArray:
+        """Distributed batch hashing with explicit parameters."""
+        def hash_fn(state):
+            return jnp.dot(state, vec_hasher.flatten())
+        
+        vectorized_fn = vmap(hash_fn, in_axes=0, out_axes=0)
+        return vectorized_fn(states)
+else:
+    # Fallback implementations when pjit is not available
+    def distributed_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+        return hasher.hash_states(states)
+    
+    def distributed_vectorized_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+        return vectorized_hash_states(states, hasher)
+    
+    def distributed_batch_hash_with_params(states: JaxArray, vec_hasher: JaxArray, seed: int) -> JaxArray:
+        def hash_fn(state):
+            return jnp.dot(state, vec_hasher.flatten())
+        
+        vectorized_fn = vmap(hash_fn, in_axes=0, out_axes=0)
+        return vectorized_fn(states)
+
+
+class OptimizedJAXStateHasher(JAXStateHasher):
+    """Enhanced JAX state hasher with advanced TPU optimizations."""
+    
+    def __init__(self, state_size: int, random_seed: Optional[int] = None, 
+                 chunk_size: int = 2**18, use_string_encoder: bool = False,
+                 enable_sharding: bool = True, use_scan: bool = True):
+        """Initialize optimized hasher with TPU-specific features."""
+        super().__init__(state_size, random_seed, chunk_size, use_string_encoder)
+        self.enable_sharding = enable_sharding and JAX_AVAILABLE and pjit is not None
+        self.use_scan = use_scan
+    
+    @jit
+    def _optimized_hash_dot_product_chunk(self, states: JaxArray) -> JaxArray:
+        """Optimized dot product hashing using lax operations."""
+        if self.use_scan:
+            def scan_fn(carry, state):
+                hash_val = jnp.dot(state, self.vec_hasher.flatten())
+                return carry, hash_val
+            
+            _, hash_values = lax.scan(scan_fn, None, states)
+            return hash_values
+        else:
+            return (states @ self.vec_hasher).reshape(-1)
+    
+    @jit
+    def _optimized_hash_splitmix64_chunk(self, states: JaxArray) -> JaxArray:
+        """Optimized SplitMix64 hashing using vectorized operations."""
+        batch_size, state_size = states.shape
+        
+        # Vectorized implementation using vmap
+        def hash_single_state(state):
+            return _vectorized_splitmix64_single(state, self.seed)
+        
+        vectorized_hash = vmap(hash_single_state, in_axes=0, out_axes=0)
+        return vectorized_hash(states)
+    
+    def hash_states_optimized(self, states: JaxArray) -> JaxArray:
+        """Optimized state hashing with TPU sharding support."""
+        if states.ndim == 1:
+            states = states.reshape(1, -1)
+        elif states.ndim > 2:
+            states = states.reshape(-1, self.state_size)
+        
+        if self.enable_sharding:
+            return distributed_hash_states(states, self)
+        else:
+            return self.hash_states(states)
+    
+    def batch_hash_with_vectorization(self, state_batches: list) -> JaxArray:
+        """Batch hash multiple arrays with full vectorization."""
+        # Combine all batches into a single array for maximum vectorization
+        combined_states = concatenate_arrays(state_batches, axis=0)
+        
+        if self.enable_sharding:
+            return distributed_vectorized_hash_states(combined_states, self)
+        else:
+            return vectorized_hash_states(combined_states, self)
+
+
+# Memory-efficient hashing for very large state spaces
+def memory_efficient_hash_large_batch(states: JaxArray, hasher: JAXStateHasher, 
+                                     max_memory_gb: float = 4.0) -> JaxArray:
+    """Memory-efficient hashing for very large batches."""
+    _check_jax_available()
+    
+    # Estimate memory usage
+    element_size = states.dtype.itemsize
+    batch_size_gb = (states.size * element_size) / (1024**3)
+    
+    if batch_size_gb <= max_memory_gb:
+        return hasher.hash_states(states)
+    
+    # Process in chunks
+    chunk_size = int(max_memory_gb * (1024**3) / (states.shape[1] * element_size))
+    chunk_size = max(1, min(chunk_size, states.shape[0]))
+    
+    # Use lax.scan for memory-efficient processing
+    def scan_fn(carry, chunk):
+        chunk_hashes = hasher.hash_states(chunk)
+        return carry, chunk_hashes
+    
+    chunks = jnp.array_split(states, max(1, states.shape[0] // chunk_size), axis=0)
+    _, hash_results = lax.scan(scan_fn, None, jnp.stack(chunks))
+    
+    return jnp.concatenate(hash_results, axis=0)
+
+
+# Gradient checkpointing for memory efficiency
+if JAX_AVAILABLE:
+    try:
+        from jax.experimental import remat
+        
+        @remat
+        def memory_efficient_vectorized_hash(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+            """Memory-efficient vectorized hashing with gradient checkpointing."""
+            return vectorized_hash_states(states, hasher)
+        
+        @remat
+        def memory_efficient_batch_hash(state_batches: list, hasher: JAXStateHasher) -> JaxArray:
+            """Memory-efficient batch hashing with gradient checkpointing."""
+            combined_states = concatenate_arrays(state_batches, axis=0)
+            return hasher.hash_states(combined_states)
+    except ImportError:
+        # Fallback if remat is not available
+        def memory_efficient_vectorized_hash(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+            return vectorized_hash_states(states, hasher)
+        
+        def memory_efficient_batch_hash(state_batches: list, hasher: JAXStateHasher) -> JaxArray:
+            combined_states = concatenate_arrays(state_batches, axis=0)
+            return hasher.hash_states(combined_states)
+
+
+# Performance benchmarking with TPU-specific metrics
+def benchmark_hash_performance_advanced(hasher: JAXStateHasher, 
+                                       test_states: JaxArray, 
+                                       num_iterations: int = 10,
+                                       test_sharding: bool = True) -> dict:
+    """Advanced benchmark with TPU-specific performance metrics."""
+    import time
+    
+    results = {}
+    
+    # Warm up JIT compilation
+    _ = hasher.hash_states(test_states[:100])
+    if hasattr(hasher, 'hash_states_optimized'):
+        _ = hasher.hash_states_optimized(test_states[:100])
+    
+    # Benchmark standard hashing
+    times = []
+    for _ in range(num_iterations):
+        start_time = time.time()
+        _ = hasher.hash_states(test_states)
+        end_time = time.time()
+        times.append(end_time - start_time)
+    
+    results['standard'] = {
+        "mean_time": sum(times) / len(times),
+        "min_time": min(times),
+        "max_time": max(times),
         "states_per_second": len(test_states) / (sum(times) / len(times))
     }
+    
+    # Benchmark vectorized hashing
+    times = []
+    for _ in range(num_iterations):
+        start_time = time.time()
+        _ = vectorized_hash_states(test_states, hasher)
+        end_time = time.time()
+        times.append(end_time - start_time)
+    
+    results['vectorized'] = {
+        "mean_time": sum(times) / len(times),
+        "min_time": min(times),
+        "max_time": max(times),
+        "states_per_second": len(test_states) / (sum(times) / len(times))
+    }
+    
+    # Benchmark sharded hashing if available
+    if test_sharding and JAX_AVAILABLE and pjit is not None:
+        times = []
+        for _ in range(num_iterations):
+            start_time = time.time()
+            _ = distributed_hash_states(test_states, hasher)
+            end_time = time.time()
+            times.append(end_time - start_time)
+        
+        results['sharded'] = {
+            "mean_time": sum(times) / len(times),
+            "min_time": min(times),
+            "max_time": max(times),
+            "states_per_second": len(test_states) / (sum(times) / len(times))
+        }
+    
+    return results
