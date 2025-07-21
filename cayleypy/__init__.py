@@ -8,3 +8,20 @@ from .datasets import load_dataset
 from .graphs_lib import prepare_graph, PermutationGroups, MatrixGroups
 from .predictor import Predictor
 from .puzzles import Puzzles, GapPuzzles
+
+# JAX/TPU support (optional)
+try:
+    from .jax_device_manager import JAXDeviceManager, DeviceFallbackHandler
+    __all__ = [
+        "BeamSearchResult", "bfs_bitmask", "bfs_numpy", "BfsResult", "CayleyGraph", 
+        "CayleyGraphDef", "MatrixGenerator", "load_dataset", "prepare_graph", 
+        "PermutationGroups", "MatrixGroups", "Predictor", "Puzzles", "GapPuzzles",
+        "JAXDeviceManager", "DeviceFallbackHandler"
+    ]
+except ImportError:
+    # JAX not available, continue without JAX support
+    __all__ = [
+        "BeamSearchResult", "bfs_bitmask", "bfs_numpy", "BfsResult", "CayleyGraph", 
+        "CayleyGraphDef", "MatrixGenerator", "load_dataset", "prepare_graph", 
+        "PermutationGroups", "MatrixGroups", "Predictor", "Puzzles", "GapPuzzles"
+    ]
