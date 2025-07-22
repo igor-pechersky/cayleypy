@@ -20,7 +20,11 @@ try:
     from jax import jit, vmap, lax
     import jax.random as jrandom
     from jax.experimental import pjit
-    from jax.experimental.pjit import PartitionSpec as P
+    try:
+        from jax.experimental.pjit import PartitionSpec as P
+    except ImportError:
+        # JAX >= 0.4.0 moved PartitionSpec to jax.sharding
+        from jax.sharding import PartitionSpec as P
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
@@ -29,6 +33,7 @@ except ImportError:
     jrandom = None
     lax = None
     pjit = None
+    P = None
     P = None
     # Create dummy decorators when JAX is not available
     def jit(func):
@@ -360,12 +365,13 @@ def _vectorized_splitmix64_single(state: JaxArray, seed: int) -> int:
 
 
 # TPU-optimized distributed hashing
-@pjit(
-    in_axis_resources=(P('batch', None), P()),
-    out_axis_resources=P('batch')
-)
-def distributed_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
-    """Distributed state hashing across TPU cores.
+if JAX_AVAILABLE and P is not None:
+    @pjit(
+        in_axis_resources=(P('batch', None), P()),
+        out_axis_resources=P('batch')
+    )
+    def distributed_hash_states(states: JaxArray, hasher: JAXStateHasher) -> JaxArray:
+        """Distributed state hashing across TPU cores.
     
     Args:
         states: Batch of states sharded across devices
