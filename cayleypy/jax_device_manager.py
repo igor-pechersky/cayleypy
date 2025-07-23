@@ -2,8 +2,7 @@
 
 import logging
 import os
-import warnings
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 try:
     import jax
@@ -13,8 +12,8 @@ try:
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
-    jax = None
-    jnp = None
+    jax = None  # type: ignore
+    jnp = None  # type: ignore
 
 
 logger = logging.getLogger(__name__)
@@ -23,13 +22,9 @@ logger = logging.getLogger(__name__)
 class DeviceNotFoundError(Exception):
     """Raised when a requested device is not available."""
 
-    pass
-
 
 class OutOfMemoryError(Exception):
     """Raised when device runs out of memory."""
-
-    pass
 
 
 class JAXDeviceManager:
@@ -56,9 +51,9 @@ class JAXDeviceManager:
         self.devices = self._get_devices(self.device_type)
         self.primary_device = self.devices[0]
 
-        logger.info(f"JAX device manager initialized with {self.device_type} backend")
-        logger.info(f"Available devices: {[str(d) for d in self.devices]}")
-        logger.info(f"Primary device: {self.primary_device}")
+        logger.info("JAX device manager initialized with %s backend", self.device_type)
+        logger.info("Available devices: %s", [str(d) for d in self.devices])
+        logger.info("Primary device: %s", self.primary_device)
 
     def _configure_jax_memory(self) -> None:
         """Configure JAX memory allocation settings."""
@@ -109,7 +104,7 @@ class JAXDeviceManager:
         # Preference order: TPU > GPU > CPU
         for preferred in ["tpu", "gpu", "cpu"]:
             if preferred in platform_types:
-                logger.info(f"Auto-selected {preferred} device")
+                logger.info("Auto-selected %s device", preferred)
                 return preferred
 
         raise DeviceNotFoundError("No compatible devices found")
@@ -131,7 +126,7 @@ class JAXDeviceManager:
 
         return devices
 
-    def put_on_device(self, array: Union[jnp.ndarray, list, tuple], device: Optional = None) -> jnp.ndarray:
+    def put_on_device(self, array: Union[jnp.ndarray, list, tuple], device: Optional[Any] = None) -> jnp.ndarray:
         """Place array on specified device with automatic sharding for large arrays.
 
         Args:
@@ -212,7 +207,7 @@ class JAXDeviceManager:
                                 "free_memory_gb": (stats.get("bytes_limit", 0) - stats.get("bytes_in_use", 0)) / 1e9,
                             }
                         )
-                    except Exception:
+                    except Exception:  # pylint: disable=broad-exception-caught
                         # Fall back to estimates if memory_stats fails
                         device_info.update(self._get_fallback_memory_estimates(device.platform))
                 else:
@@ -221,8 +216,8 @@ class JAXDeviceManager:
 
                 memory_info[str(device)] = device_info
 
-            except Exception as e:
-                logger.warning(f"Could not get memory info for device {device}: {e}")
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.warning("Could not get memory info for device %s: %s", device, e)
                 memory_info[str(device)] = {"device_id": i, "platform": device.platform, "error": str(e)}
 
         return memory_info
@@ -261,8 +256,8 @@ class JAXDeviceManager:
             # Clear compilation cache
             jax.clear_caches()
             logger.info("JAX compilation cache cleared")
-        except Exception as e:
-            logger.warning(f"Failed to clear JAX cache: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.warning("Failed to clear JAX cache: %s", e)
 
     def get_device_count(self) -> int:
         """Get number of available devices of current type."""
@@ -303,7 +298,7 @@ class DeviceFallbackHandler:
             preferred_devices: List of devices in preference order
         """
         self.device_hierarchy = preferred_devices or ["tpu", "gpu", "cpu"]
-        self.device_managers = {}
+        self.device_managers: Dict[str, JAXDeviceManager] = {}
 
     def execute_with_fallback(self, func, *args, **kwargs):
         """Execute function with automatic device fallback.
@@ -337,7 +332,7 @@ class DeviceFallbackHandler:
 
             except (OutOfMemoryError, DeviceNotFoundError, RuntimeError) as e:
                 last_error = e
-                logger.warning(f"Device {device_type} failed: {e}. Trying next device...")
+                logger.warning("Device %s failed: %s. Trying next device...", device_type, e)
                 continue
 
         raise RuntimeError(f"All devices failed. Last error: {last_error}")

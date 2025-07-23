@@ -5,18 +5,15 @@ PyTorch functionality, optimized for TPU/GPU computation with JIT compilation.
 """
 
 from typing import Tuple, Union, Optional
-import warnings
 
 try:
-    import jax
     import jax.numpy as jnp
-    from jax import jit, vmap
+    from jax import jit
 
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
-    jax = None
-    jnp = None
+    jnp = None  # type: ignore
 
 
 def _check_jax_available():
@@ -115,9 +112,10 @@ def isin_via_searchsorted(elements: jnp.ndarray, test_elements_sorted: jnp.ndarr
     return test_elements_sorted[indices] == elements
 
 
-@jit
 def tensor_split(array: jnp.ndarray, sections: int, axis: int = 0) -> list:
     """JAX equivalent of torch.tensor_split.
+
+    Note: This function cannot be JIT compiled due to dynamic output shapes.
 
     Args:
         array: Array to split
@@ -132,7 +130,6 @@ def tensor_split(array: jnp.ndarray, sections: int, axis: int = 0) -> list:
     return jnp.array_split(array, sections, axis=axis)
 
 
-@jit
 def sort_with_indices(array: jnp.ndarray, axis: int = -1, stable: bool = True) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """JAX equivalent of torch.sort returning both values and indices.
 

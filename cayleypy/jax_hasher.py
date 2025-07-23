@@ -16,13 +16,13 @@ try:
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
-    jnp = None
-    jrandom = None
+    jnp = None  # type: ignore
+    jrandom = None  # type: ignore
 
 from .jax_tensor_ops import concatenate_arrays, chunked_operation, unique_with_indices
 
 if TYPE_CHECKING:
-    from cayleypy import JAXCayleyGraph
+    from cayleypy.jax_cayley_graph import JAXCayleyGraph
 
 MAX_INT = 2**62
 
@@ -142,11 +142,11 @@ class JAXStateHasher:
         # Choose hash function based on encoding type
         if use_string_encoder:
             # For bit-encoded states, use SplitMix64 to avoid collisions
-            self.make_hashes = self._hash_splitmix64
+            self.make_hashes = self._hash_splitmix64  # type: ignore
         else:
             # For regular states, use dot product with random vector
             self._initialize_vector_hasher()
-            self.make_hashes = self._hash_dot_product
+            self.make_hashes = self._hash_dot_product  # type: ignore
 
     def _initialize_vector_hasher(self) -> None:
         """Initialize random vector for dot product hashing."""
@@ -387,7 +387,8 @@ def find_hash_duplicates(hashes: jnp.ndarray) -> tuple:
     Returns:
         Tuple of (unique_hashes, inverse_indices, counts)
     """
-    return unique_with_indices(hashes, return_inverse=True, return_counts=True)
+    result = unique_with_indices(hashes, return_inverse=True, return_counts=True)
+    return result  # type: ignore
 
 
 def benchmark_hash_performance(hasher: JAXStateHasher, test_states: jnp.ndarray, num_iterations: int = 10) -> dict:

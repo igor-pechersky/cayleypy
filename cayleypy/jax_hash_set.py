@@ -5,18 +5,15 @@ optimized for TPU/GPU computation with vectorized operations.
 """
 
 from typing import List
-import warnings
 
 try:
-    import jax
     import jax.numpy as jnp
     from jax import jit
 
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
-    jax = None
-    jnp = None
+    jnp = None  # type: ignore
 
 from .jax_tensor_ops import isin_via_searchsorted, sort_with_indices, concatenate_arrays
 

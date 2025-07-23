@@ -5,14 +5,12 @@ optimized for TPU/GPU computation with JIT compilation and vectorization.
 """
 
 import math
-from typing import Callable, Dict, Tuple, Optional
-import warnings
+from typing import Callable, Dict, Tuple
 
 try:
     import jax
     import jax.numpy as jnp
-    from jax import jit, vmap
-    from functools import partial
+    from jax import jit
 
     # Enable 64-bit precision for JAX
     jax.config.update("jax_enable_x64", True)
@@ -20,8 +18,8 @@ try:
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
-    jax = None
-    jnp = None
+    jax = None  # type: ignore
+    jnp = None  # type: ignore
 
 # We are using int64, but avoid using the sign bit.
 CODEWORD_LENGTH = 63

@@ -20,8 +20,8 @@ try:
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
-    jax = None
-    jnp = None
+    jax = None  # type: ignore
+    jnp = None  # type: ignore
 
 
 def _check_jax_available():
@@ -392,7 +392,7 @@ def create_generator_system_from_cayley_def(cayley_def) -> JAXGeneratorSystem:
     generators: List[Union[JAXPermutationGenerator, JAXMatrixGenerator]]
     if cayley_def.is_permutation_group():
         perm_generators = create_permutation_generators_from_lists(cayley_def.generators_permutations)
-        generators = perm_generators
+        generators = list(perm_generators)  # type: ignore  # Convert to satisfy type checker
     else:
         # Convert MatrixGenerator objects to JAX matrix generators
         generators = []

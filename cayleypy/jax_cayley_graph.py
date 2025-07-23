@@ -4,18 +4,48 @@ This module provides a JAX-based implementation of the CayleyGraph class,
 maintaining full API compatibility with the PyTorch version while leveraging
 JAX's functional programming paradigm and advanced compilation features.
 """
+# pylint: disable=too-many-lines
 
 import gc
 import math
-from typing import Optional, Union, List, Dict, Any
-import warnings
+from functools import partial
+from typing import Optional, Union, List, TYPE_CHECKING, Any, Type
+
+import numpy as np
+
+from .cayley_graph_def import CayleyGraphDef, GeneratorType
+from .jax_device_manager import JAXDeviceManager
+from .jax_hasher import JAXStateHasher
+from .jax_string_encoder import JAXStringEncoder
+from .jax_tensor_ops import (
+    gather_along_axis,
+    isin_via_searchsorted,
+    tensor_split,
+    concatenate_arrays,
+    stack_arrays,
+    sort_with_indices,
+    ensure_jax_array,
+)
+
+if TYPE_CHECKING:
+    from .bfs_result import BfsResult as BFS_RESULT_TYPE
+    from .jax_hash_set import JAXHashSet as JAX_HASH_SET_TYPE
+    from .beam_search_result import BeamSearchResult as BEAM_SEARCH_RESULT_TYPE
+    from .predictor import Predictor as PREDICTOR_TYPE
+    from jax.sharding import PositionalSharding as POSITIONAL_SHARDING_TYPE
+else:
+    BFS_RESULT_TYPE = None
+    JAX_HASH_SET_TYPE = None
+    BEAM_SEARCH_RESULT_TYPE = None
+    PREDICTOR_TYPE = None
+    POSITIONAL_SHARDING_TYPE = None
 
 try:
     import jax
     import jax.numpy as jnp
-    from jax import jit, vmap
-    from functools import partial
     import jax.random as jrandom
+    from jax import jit
+    from jax.sharding import PositionalSharding
 
     # Enable 64-bit precision for JAX
     jax.config.update("jax_enable_x64", True)
@@ -23,30 +53,42 @@ try:
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
-    jax = None
-    jnp = None
-    jrandom = None
+    jax = None  # type: ignore
+    jnp = None  # type: ignore
+    jrandom = None  # type: ignore
+    PositionalSharding = None  # type: ignore
 
-import numpy as np
+try:
+    import torch
 
-from .cayley_graph_def import CayleyGraphDef, GeneratorType
-from .jax_device_manager import JAXDeviceManager
-from .jax_tensor_ops import (
-    unique_with_indices,
-    gather_along_axis,
-    isin_via_searchsorted,
-    tensor_split,
-    concatenate_arrays,
-    stack_arrays,
-    zeros_like,
-    ones_like,
-    sort_with_indices,
-    to_jax_array,
-    ensure_jax_array,
-    boolean_indexing,
-)
-from .jax_string_encoder import JAXStringEncoder
-from .jax_hasher import JAXStateHasher
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None  # type: ignore
+
+# Runtime imports for modules that may cause circular imports
+BfsResult: Optional[Type[Any]] = None
+JAXHashSet: Optional[Type[Any]] = None
+BeamSearchResult: Optional[Type[Any]] = None
+Predictor: Optional[Type[Any]] = None
+
+try:
+    from .bfs_result import BfsResult  # type: ignore
+except ImportError:
+    pass
+
+try:
+    from .jax_hash_set import JAXHashSet  # type: ignore
+except ImportError:
+    pass
+
+try:
+    from .beam_search_result import BeamSearchResult  # type: ignore
+    from .predictor import Predictor  # type: ignore
+except ImportError:
+    pass
+
+# PositionalSharding is now imported with the main JAX imports above
 
 
 def _check_jax_available():
@@ -107,6 +149,11 @@ class JAXCayleyGraph:
         self.device_manager = JAXDeviceManager(device)
         if verbose > 0:
             print(f"Using device: {self.device_manager.primary_device}")
+
+        # TPU-specific configuration
+        self.is_tpu = self.device_manager.is_tpu()
+        self.num_devices = len(self.device_manager.devices) if self.is_tpu else 1
+        self.tpu_shard_threshold = 2**20  # Shard arrays larger than 1M elements
 
         # Set up central state
         self.central_state = self.device_manager.put_on_device(jnp.array(definition.central_state, dtype=jnp.int64))
@@ -217,10 +264,11 @@ class JAXCayleyGraph:
                         states = states.reshape(num_matrices, n, m).reshape(num_matrices, -1)
                     else:
                         raise ValueError(f"Cannot reshape state to {n}x{m} matrix")
-                except:
+                except Exception as exc:
                     raise ValueError(
-                        f"Invalid matrix state shape: expected {n}x{m} matrix or flattened {n*m} vector, got {states.shape}"
-                    )
+                        f"Invalid matrix state shape: expected {n}x{m} matrix or "
+                        f"flattened {n*m} vector, got {states.shape}"
+                    ) from exc
         else:
             # Handle permutation groups
             if states.ndim == 1:
@@ -358,7 +406,7 @@ class JAXCayleyGraph:
                     return False
 
             return True
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             return False
 
     def apply_generator(self, states: Union[jnp.ndarray, np.ndarray, list], generator_id: int) -> jnp.ndarray:
@@ -637,6 +685,7 @@ class JAXCayleyGraph:
         max_diameter: int = 1000000,
         return_all_edges: bool = False,
         return_all_hashes: bool = False,
+        enable_tpu_sharding: bool = True,
     ):
         """Run breadth-first search (BFS) algorithm from given start_states.
 
@@ -657,17 +706,18 @@ class JAXCayleyGraph:
         Returns:
             BfsResult object with requested BFS results.
         """
-        # Import here to avoid circular imports
-        from .bfs_result import BfsResult
+        # Use imported BfsResult
+        if BfsResult is None:
+            raise ImportError("BfsResult not available")
 
         start_states = self.encode_states(start_states or self.central_state)
         layer1, layer1_hashes = self._get_unique_states(start_states)
         layer_sizes = [len(layer1)]
         layers = {0: self.decode_states(layer1)}
         full_graph_explored = False
-        edges_list_starts = []
-        edges_list_ends = []
-        all_layers_hashes = []
+        edges_list_starts: list[jnp.ndarray] = []
+        edges_list_ends: list[jnp.ndarray] = []
+        all_layers_hashes: list[jnp.ndarray] = []
         max_layer_size_to_store = max_layer_size_to_store or 10**15
 
         # When we don't need edges, we can apply more memory-efficient algorithm with batching.
@@ -694,32 +744,71 @@ class JAXCayleyGraph:
 
         # BFS iteration: layer2 := neighbors(layer1)-layer0-layer1.
         for i in range(1, max_diameter + 1):
+            # TPU optimization: shard large layers across cores
+            if enable_tpu_sharding and self.is_tpu:
+                layer1 = self._shard_array_for_tpu(layer1)
+                layer1 = self._optimize_memory_layout_for_tpu(layer1)
+
             if do_batching and len(layer1) > self.batch_size:
                 num_batches = int(math.ceil(layer1_hashes.shape[0] / self.batch_size))
                 layer2_batches = []  # type: list[jnp.ndarray]
                 layer2_hashes_batches = []  # type: list[jnp.ndarray]
+
+                # TPU optimization: use compiled processing for batches
                 for layer1_batch in tensor_split(layer1, num_batches, axis=0):
-                    layer2_batch = self.get_neighbors(layer1_batch)
-                    layer2_batch, layer2_hashes_batch = self._get_unique_states(layer2_batch)
+                    if self.is_tpu and len(layer1_batch) > 100:  # Use compiled version for larger batches
+                        try:
+                            layer2_batch, layer2_hashes_batch = self._bfs_layer_processing_compiled(
+                                layer1_batch, self.hasher.hash_states(layer1_batch)
+                            )
+                        except Exception as e:  # pylint: disable=broad-exception-caught
+                            if self.verbose > 0:
+                                print(f"Compiled processing failed, using fallback: {e}")
+                            layer2_batch = self.get_neighbors(layer1_batch)
+                            layer2_batch, layer2_hashes_batch = self._get_unique_states(layer2_batch)
+                    else:
+                        layer2_batch = self.get_neighbors(layer1_batch)
+                        layer2_batch, layer2_hashes_batch = self._get_unique_states(layer2_batch)
+
                     mask = _remove_seen_states(layer2_hashes_batch)
                     for other_batch_hashes in layer2_hashes_batches:
                         mask &= ~isin_via_searchsorted(layer2_hashes_batch, other_batch_hashes)
                     layer2_batch, layer2_hashes_batch = _apply_mask(layer2_batch, layer2_hashes_batch, mask)
                     layer2_batches.append(layer2_batch)
                     layer2_hashes_batches.append(layer2_hashes_batch)
+
                 layer2_hashes = concatenate_arrays(layer2_hashes_batches)
                 layer2_hashes, _ = sort_with_indices(layer2_hashes, stable=True)
                 layer2 = (
                     layer2_hashes.reshape((-1, 1)) if self.hasher.is_identity else concatenate_arrays(layer2_batches)
                 )
             else:
-                layer1_neighbors = self.get_neighbors(layer1)
-                layer1_neighbors_hashes = self.hasher.hash_states(layer1_neighbors)
-                if return_all_edges:
-                    edges_list_starts += [jnp.repeat(layer1_hashes, self.definition.n_generators)]
-                    edges_list_ends.append(layer1_neighbors_hashes)
+                # TPU optimization: use compiled processing for single large layers
+                if self.is_tpu and len(layer1) > 100:
+                    try:
+                        layer2, layer2_hashes = self._bfs_layer_processing_compiled(layer1, layer1_hashes)
+                        if return_all_edges:
+                            edges_list_starts += [jnp.repeat(layer1_hashes, self.definition.n_generators)]
+                            edges_list_ends.append(layer2_hashes)
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        if self.verbose > 0:
+                            print(f"Compiled processing failed, using fallback: {e}")
+                        layer1_neighbors = self.get_neighbors(layer1)
+                        layer1_neighbors_hashes = self.hasher.hash_states(layer1_neighbors)
+                        if return_all_edges:
+                            edges_list_starts += [jnp.repeat(layer1_hashes, self.definition.n_generators)]
+                            edges_list_ends.append(layer1_neighbors_hashes)
+                        layer2, layer2_hashes = self._get_unique_states(
+                            layer1_neighbors, hashes=layer1_neighbors_hashes
+                        )
+                else:
+                    layer1_neighbors = self.get_neighbors(layer1)
+                    layer1_neighbors_hashes = self.hasher.hash_states(layer1_neighbors)
+                    if return_all_edges:
+                        edges_list_starts += [jnp.repeat(layer1_hashes, self.definition.n_generators)]
+                        edges_list_ends.append(layer1_neighbors_hashes)
+                    layer2, layer2_hashes = self._get_unique_states(layer1_neighbors, hashes=layer1_neighbors_hashes)
 
-                layer2, layer2_hashes = self._get_unique_states(layer1_neighbors, hashes=layer1_neighbors_hashes)
                 mask = _remove_seen_states(layer2_hashes)
                 layer2, layer2_hashes = _apply_mask(layer2, layer2_hashes, mask)
 
@@ -771,12 +860,37 @@ class JAXCayleyGraph:
         if full_graph_explored and last_layer_id not in layers:
             layers[last_layer_id] = self.decode_states(layer1)
 
+        # Convert JAX arrays to PyTorch tensors for BfsResult compatibility
+        # Use the globally imported torch module
+
+        def jax_to_torch(jax_array):
+            """Convert JAX array to PyTorch tensor."""
+            if jax_array is None:
+                return None
+            if isinstance(jax_array, jnp.ndarray):
+                # Convert JAX array to numpy, then to PyTorch
+                # Make a copy to ensure the array is writable
+                numpy_array = np.array(jax_array)
+                return torch.from_numpy(numpy_array)
+            return jax_array
+
+        # Convert layers to PyTorch tensors
+        torch_layers = {}
+        for layer_id, layer_states in layers.items():
+            torch_layers[layer_id] = jax_to_torch(layer_states)
+
+        # Convert vertices_hashes to PyTorch tensor if present
+        torch_vertices_hashes = jax_to_torch(vertices_hashes)
+
+        # Convert edges_list_hashes to PyTorch tensor if present
+        torch_edges_list_hashes = jax_to_torch(edges_list_hashes)
+
         return BfsResult(
             layer_sizes=layer_sizes,
-            layers=layers,
+            layers=torch_layers,
             bfs_completed=full_graph_explored,
-            vertices_hashes=vertices_hashes,
-            edges_list_hashes=edges_list_hashes,
+            vertices_hashes=torch_vertices_hashes,
+            edges_list_hashes=torch_edges_list_hashes,
             graph=self.definition,
         )
 
@@ -870,8 +984,9 @@ class JAXCayleyGraph:
 
     def _random_walks_bfs(self, width: int, length: int, start_state: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         """BFS-style random walks implementation."""
-        # Import here to avoid circular imports
-        from .jax_hash_set import JAXHashSet
+        # Use imported JAXHashSet
+        if JAXHashSet is None:
+            raise ImportError("JAXHashSet not available")
 
         x_hashes = JAXHashSet()
         x_hashes.add_sorted_hashes(self.hasher.hash_states(start_state))
@@ -922,12 +1037,12 @@ class JAXCayleyGraph:
         Returns:
             BeamSearchResult containing found path length and (optionally) the path itself.
         """
-        # Import here to avoid circular imports
-        from .beam_search_result import BeamSearchResult
-        from .predictor import Predictor
+        # Use imported modules
+        if BeamSearchResult is None or Predictor is None:
+            raise ImportError("BeamSearchResult or Predictor not available")
 
         if predictor is None:
-            predictor = Predictor(self, "hamming")
+            predictor = Predictor(self, "hamming")  # type: ignore
         start_states = self.encode_states(start_state)
         layer1, layer1_hashes = self._get_unique_states(start_states)
         all_layers_hashes = [layer1_hashes]
@@ -1041,6 +1156,67 @@ class JAXCayleyGraph:
         return self.bfs(
             max_layer_size_to_store=10**18, return_all_edges=True, return_all_hashes=True
         ).to_networkx_graph()
+
+    def _should_shard_array(self, array: jnp.ndarray) -> bool:
+        """Determine if array should be sharded across TPU cores."""
+        if not self.is_tpu or self.num_devices <= 1:
+            return False
+
+        # Shard if array is large enough and has sufficient batch dimension
+        total_elements = array.size
+        batch_size = array.shape[0] if array.ndim > 0 else 1
+
+        return total_elements > self.tpu_shard_threshold and batch_size >= self.num_devices
+
+    def _shard_array_for_tpu(self, array: jnp.ndarray) -> jnp.ndarray:
+        """Shard array across TPU cores for parallel processing."""
+        if not self._should_shard_array(array):
+            return array
+
+        try:
+            # Use JAX's automatic sharding
+            if PositionalSharding is None:
+                raise ImportError("PositionalSharding not available")
+
+            # Create sharding specification
+            sharding = PositionalSharding(self.device_manager.devices).reshape(self.num_devices, 1)
+
+            # Shard along the batch dimension (axis 0)
+            return jax.device_put(array, sharding)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            if self.verbose > 0:
+                print(f"TPU sharding failed, using single device: {e}")
+            return array
+
+    @partial(jit, static_argnums=(0,))
+    def _bfs_layer_processing_compiled(
+        self, layer_states: jnp.ndarray, _layer_hashes: jnp.ndarray
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """JIT-compiled BFS layer processing for TPU optimization."""
+        # Get neighbors for all states in the layer
+        neighbors = self.get_neighbors(layer_states)
+
+        # Hash the neighbors
+        neighbor_hashes = self.hasher.hash_states(neighbors)
+
+        # Remove duplicates within this batch
+        unique_neighbors, unique_hashes = self._get_unique_states(neighbors, neighbor_hashes)
+
+        return unique_neighbors, unique_hashes
+
+    def _optimize_memory_layout_for_tpu(self, array: jnp.ndarray) -> jnp.ndarray:
+        """Optimize memory layout for TPU access patterns."""
+        if not self.is_tpu:
+            return array
+
+        # Ensure arrays are contiguous and properly aligned for TPU
+        # TPUs prefer certain memory layouts for optimal performance
+        if array.ndim >= 2:
+            # JAX arrays are typically already in optimal layout
+            # No need for explicit contiguous array conversion in JAX
+            pass
+
+        return array
 
     def free_memory(self):
         """Free memory and clear caches."""

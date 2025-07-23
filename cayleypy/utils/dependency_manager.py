@@ -9,8 +9,24 @@ import os
 import platform
 import subprocess
 import sys
-import warnings
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
+
+try:
+    import requests  # type: ignore[import-untyped]
+except ImportError:
+    requests = None  # type: ignore
+
+try:
+    import jax
+    import jax.numpy as jnp
+except ImportError:
+    jax = None  # type: ignore
+    jnp = None  # type: ignore
+
+try:
+    import torch
+except ImportError:
+    torch = None  # type: ignore
 
 
 class DependencyManager:
@@ -28,14 +44,14 @@ class DependencyManager:
         self.recommended_backend = self._select_optimal_backend()
         self.installation_commands = self._generate_installation_commands()
 
-    def _detect_hardware(self) -> Dict[str, Union[bool, str, int]]:
+    def _detect_hardware(self) -> Dict[str, Any]:
         """
         Detect available hardware capabilities.
 
         Returns:
             Dictionary containing hardware information including CPU, GPU, and TPU availability.
         """
-        hardware = {
+        hardware: Dict[str, Any] = {
             "cpu": True,  # CPU always available
             "cpu_count": os.cpu_count() or 1,
             "platform": platform.system(),
@@ -57,14 +73,14 @@ class DependencyManager:
 
         return hardware
 
-    def _detect_cuda(self) -> Dict[str, Union[bool, str, int]]:
+    def _detect_cuda(self) -> Dict[str, Any]:
         """
         Detect CUDA availability and version.
 
         Returns:
             Dictionary with CUDA detection results.
         """
-        cuda_info = {
+        cuda_info: Dict[str, Any] = {
             "gpu_available": False,
             "gpu_type": None,
             "gpu_count": 0,
@@ -79,6 +95,7 @@ class DependencyManager:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
 
             if result.returncode == 0:
@@ -94,6 +111,7 @@ class DependencyManager:
                         capture_output=True,
                         text=True,
                         timeout=5,
+                        check=False,
                     )
 
                     if cuda_version_result.returncode == 0:
@@ -113,14 +131,14 @@ class DependencyManager:
 
         return cuda_info
 
-    def _detect_tpu(self) -> Dict[str, Union[bool, str]]:
+    def _detect_tpu(self) -> Dict[str, Any]:
         """
         Detect TPU availability.
 
         Returns:
             Dictionary with TPU detection results.
         """
-        tpu_info = {
+        tpu_info: Dict[str, Any] = {
             "tpu_available": False,
             "tpu_type": None,
         }
@@ -133,30 +151,28 @@ class DependencyManager:
             return tpu_info
 
         # Check for Colab TPU
-        try:
-            import requests
-
-            response = requests.get(
-                "http://metadata.google.internal/computeMetadata/v1/instance/attributes/accelerator-type",
-                headers={"Metadata-Flavor": "Google"},
-                timeout=1,
-            )
-            if response.status_code == 200 and "tpu" in response.text.lower():
-                tpu_info["tpu_available"] = True
-                tpu_info["tpu_type"] = response.text.strip()
-        except:
-            pass
+        if requests:
+            try:
+                response = requests.get(
+                    "http://metadata.google.internal/computeMetadata/v1/instance/attributes/accelerator-type",
+                    headers={"Metadata-Flavor": "Google"},
+                    timeout=1,
+                )
+                if response.status_code == 200 and "tpu" in response.text.lower():
+                    tpu_info["tpu_available"] = True
+                    tpu_info["tpu_type"] = response.text.strip()
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
 
         # Check for TPU via JAX (if available)
-        try:
-            import jax
-
-            tpu_devices = jax.devices("tpu")
-            if tpu_devices:
-                tpu_info["tpu_available"] = True
-                tpu_info["tpu_type"] = f"JAX-detected-{len(tpu_devices)}-cores"
-        except:
-            pass
+        if jax:
+            try:
+                tpu_devices = jax.devices("tpu")
+                if tpu_devices:
+                    tpu_info["tpu_available"] = True
+                    tpu_info["tpu_type"] = f"JAX-detected-{len(tpu_devices)}-cores"
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
 
         return tpu_info
 
@@ -182,52 +198,46 @@ class DependencyManager:
 
     def _check_pytorch(self) -> bool:
         """Check if PyTorch is available."""
-        try:
-            import torch
-
-            return True
-        except ImportError:
-            return False
+        return torch is not None
 
     def _check_pytorch_gpu(self) -> bool:
         """Check if PyTorch with GPU support is available."""
+        if torch is None:
+            return False
         try:
-            import torch
-
             return torch.cuda.is_available()
-        except ImportError:
+        except Exception:  # pylint: disable=broad-exception-caught
             return False
 
     def _check_jax_cpu(self) -> bool:
         """Check if JAX with CPU support is available."""
+        if jax is None or jnp is None:
+            return False
         try:
-            import jax
-            import jax.numpy as jnp
-
             # Test basic functionality
             _ = jnp.array([1, 2, 3])
             return True
-        except ImportError:
+        except Exception:  # pylint: disable=broad-exception-caught
             return False
 
     def _check_jax_gpu(self) -> bool:
         """Check if JAX with GPU support is available."""
+        if jax is None:
+            return False
         try:
-            import jax
-
             gpu_devices = jax.devices("gpu")
             return len(gpu_devices) > 0
-        except (ImportError, RuntimeError):
+        except (RuntimeError, Exception):  # pylint: disable=broad-exception-caught
             return False
 
     def _check_jax_tpu(self) -> bool:
         """Check if JAX with TPU support is available."""
+        if jax is None:
+            return False
         try:
-            import jax
-
             tpu_devices = jax.devices("tpu")
             return len(tpu_devices) > 0
-        except (ImportError, RuntimeError):
+        except (RuntimeError, Exception):  # pylint: disable=broad-exception-caught
             return False
 
     def _select_optimal_backend(self) -> str:
@@ -269,7 +279,7 @@ class DependencyManager:
 
         # Add CUDA version specific commands if detected
         if self.hardware_info.get("cuda_version"):
-            cuda_version = self.hardware_info["cuda_version"]
+            cuda_version = str(self.hardware_info["cuda_version"])
             if "12." in cuda_version:
                 commands["gpu-cuda12"] = f"pip install '{base_package}[jax-cuda12]'"
             elif "11." in cuda_version:
@@ -448,6 +458,9 @@ class DependencyManager:
         print("=" * 60)
 
 
+_DEPENDENCY_MANAGER_INSTANCE = None
+
+
 def get_dependency_manager() -> DependencyManager:
     """
     Get a singleton instance of the DependencyManager.
@@ -455,9 +468,10 @@ def get_dependency_manager() -> DependencyManager:
     Returns:
         DependencyManager instance.
     """
-    if not hasattr(get_dependency_manager, "_instance"):
-        get_dependency_manager._instance = DependencyManager()
-    return get_dependency_manager._instance
+    global _DEPENDENCY_MANAGER_INSTANCE  # pylint: disable=global-statement
+    if _DEPENDENCY_MANAGER_INSTANCE is None:
+        _DEPENDENCY_MANAGER_INSTANCE = DependencyManager()
+    return _DEPENDENCY_MANAGER_INSTANCE
 
 
 def check_environment() -> None:

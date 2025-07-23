@@ -1,10 +1,10 @@
 """Unit tests for JAX hash set implementation."""
 
+from unittest.mock import patch
+
 import pytest
-import numpy as np
 
 try:
-    import jax
     import jax.numpy as jnp
 
     JAX_AVAILABLE = True
@@ -297,7 +297,7 @@ class TestJAXHashSetNotAvailable:
 
     def test_hash_set_without_jax(self):
         """Test that JAXHashSet raises ImportError when JAX not available."""
-        with pytest.patch("cayleypy.jax_hash_set.JAX_AVAILABLE", False):
+        with patch("cayleypy.jax_hash_set.JAX_AVAILABLE", False):
             with pytest.raises(ImportError, match="JAX is not available"):
                 JAXHashSet()
 
