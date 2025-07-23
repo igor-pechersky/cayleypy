@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 # Development dependencies
-# pip install .[torch,lint,test,dev,docs]
+# pip install .[torch,jax-cpu,jax-cuda,jax-tpu,jax,lint,test,dev,docs]
 [project.optional-dependencies]
 torch = [
     # torch is required, but it is optional here because if it is  in dependencies,
@@ -35,10 +35,38 @@ torch = [
     # it has torch installed.
     "torch"
 ]
-jax = [
-    # JAX with TPU support for high-performance computation
+
+# JAX backend options - install based on your hardware
+jax-cpu = [
+    # JAX with CPU-only support - lightweight installation
+    "jax[cpu]>=0.4.0",
+]
+jax-cuda = [
+    # JAX with CUDA/GPU support for NVIDIA GPUs (CUDA 12.x)
+    "jax[cuda12]>=0.4.0",
+]
+jax-cuda11 = [
+    # JAX with CUDA/GPU support for NVIDIA GPUs (CUDA 11.x)
+    "jax[cuda11]>=0.4.0",
+]
+jax-tpu = [
+    # JAX with TPU support for Google Cloud TPU
     "jax[tpu]>=0.4.0",
-    # Alternative CPU/GPU installation: "jax[cpu]" or "jax[cuda]"
+]
+
+# Convenience meta-packages for common installation patterns
+jax-gpu = [
+    # Alias for CUDA 12 support (most common)
+    "cayleypy[jax-cuda]",
+]
+jax = [
+    # Auto-select appropriate JAX variant based on detected hardware
+    # This will be handled by the dependency manager at runtime
+    "jax>=0.4.0",
+]
+jax-all = [
+    # Install all JAX variants (for development/testing)
+    "cayleypy[jax-cpu,jax-cuda,jax-tpu]",
 ]
 lint = [
     "black",
@@ -120,3 +148,8 @@ disable = [
 
 [tool.black]
 line-length = 120
+
+[tool.pytest.ini_options]
+markers = [
+    "requires_jax: marks tests as requiring JAX (deselect with '-m \"not requires_jax\"')",
+]

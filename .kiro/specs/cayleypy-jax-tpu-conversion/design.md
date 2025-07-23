@@ -355,6 +355,162 @@ class TPUTester:
 - Compilation overhead: < 10% of total runtime
 - Multi-device scaling efficiency: > 80%
 
+## Dependency Management Strategy
+
+### Intelligent JAX Installation
+
+**Optional Dependencies Structure**:
+```python
+# pyproject.toml
+[project.optional-dependencies]
+jax-cpu = [
+    "jax[cpu]>=0.4.0",
+]
+jax-cuda = [
+    "jax[cuda12]>=0.4.0",  # or cuda11 based on user needs
+]
+jax-tpu = [
+    "jax[tpu]>=0.4.0",
+]
+# Convenience meta-packages
+jax-gpu = ["cayleypy[jax-cuda]"]
+jax-all = ["cayleypy[jax-cpu,jax-cuda,jax-tpu]"]
+```
+
+**Runtime Dependency Detection**:
+```python
+class DependencyManager:
+    def __init__(self):
+        self.available_backends = self._detect_available_backends()
+        self.recommended_install = self._get_install_recommendation()
+    
+    def _detect_available_backends(self) -> dict[str, bool]:
+        backends = {
+            'pytorch': self._check_pytorch(),
+            'jax-cpu': self._check_jax_cpu(),
+            'jax-gpu': self._check_jax_gpu(), 
+            'jax-tpu': self._check_jax_tpu()
+        }
+        return backends
+    
+    def _check_jax_gpu(self) -> bool:
+        try:
+            import jax
+            return len(jax.devices('gpu')) > 0
+        except (ImportError, RuntimeError):
+            return False
+    
+    def _check_jax_tpu(self) -> bool:
+        try:
+            import jax
+            return len(jax.devices('tpu')) > 0
+        except (ImportError, RuntimeError):
+            return False
+    
+    def get_install_command(self, detected_hardware: str) -> str:
+        commands = {
+            'tpu': "pip install 'cayleypy[jax-tpu]'",
+            'gpu': "pip install 'cayleypy[jax-cuda]'", 
+            'cpu': "pip install 'cayleypy[jax-cpu]'"
+        }
+        return commands.get(detected_hardware, commands['cpu'])
+```
+
+### Environment-Aware Testing Framework
+
+**Test Environment Detection**:
+```python
+class TestEnvironment:
+    def __init__(self):
+        self.has_pytorch = self._check_pytorch()
+        self.has_jax = self._check_jax()
+        self.available_devices = self._detect_devices()
+        self.test_markers = self._generate_markers()
+    
+    def _detect_devices(self) -> dict[str, bool]:
+        devices = {'cpu': True}  # CPU always available
+        
+        if self.has_jax:
+            try:
+                import jax
+                devices['jax-gpu'] = len(jax.devices('gpu')) > 0
+                devices['jax-tpu'] = len(jax.devices('tpu')) > 0
+            except RuntimeError:
+                pass
+                
+        if self.has_pytorch:
+            try:
+                import torch
+                devices['pytorch-gpu'] = torch.cuda.is_available()
+            except RuntimeError:
+                pass
+                
+        return devices
+    
+    def _generate_markers(self) -> list[str]:
+        markers = []
+        for device, available in self.available_devices.items():
+            if not available:
+                markers.append(f"skip_{device.replace('-', '_')}")
+        return markers
+```
+
+**Pytest Configuration**:
+```python
+# conftest.py
+import pytest
+from cayleypy.testing import TestEnvironment
+
+test_env = TestEnvironment()
+
+def pytest_configure(config):
+    # Register custom markers
+    config.addinivalue_line("markers", "requires_pytorch: mark test as requiring PyTorch")
+    config.addinivalue_line("markers", "requires_jax: mark test as requiring JAX")
+    config.addinivalue_line("markers", "requires_gpu: mark test as requiring GPU")
+    config.addinivalue_line("markers", "requires_tpu: mark test as requiring TPU")
+
+def pytest_collection_modifyitems(config, items):
+    for item in items:
+        # Skip tests based on available hardware/software
+        if "requires_pytorch" in item.keywords and not test_env.has_pytorch:
+            item.add_marker(pytest.mark.skip(reason="PyTorch not available"))
+        if "requires_jax" in item.keywords and not test_env.has_jax:
+            item.add_marker(pytest.mark.skip(reason="JAX not available"))
+        if "requires_gpu" in item.keywords and not any(test_env.available_devices[k] for k in ['jax-gpu', 'pytorch-gpu']):
+            item.add_marker(pytest.mark.skip(reason="GPU not available"))
+        if "requires_tpu" in item.keywords and not test_env.available_devices.get('jax-tpu', False):
+            item.add_marker(pytest.mark.skip(reason="TPU not available"))
+```
+
+**Smart Test Execution**:
+```python
+class EnvironmentAwareTest:
+    @pytest.mark.requires_jax
+    @pytest.mark.requires_gpu
+    def test_jax_gpu_performance(self):
+        """Test JAX GPU performance - skipped if JAX or GPU unavailable"""
+        pass
+    
+    @pytest.mark.requires_tpu
+    def test_tpu_scaling(self):
+        """Test TPU scaling - skipped if TPU unavailable"""
+        pass
+    
+    def test_cpu_fallback(self):
+        """Test CPU fallback - always runs"""
+        pass
+    
+    @pytest.mark.parametrize("backend", ["pytorch", "jax"])
+    def test_backend_equivalence(self, backend):
+        """Test backend equivalence - skips unavailable backends"""
+        if backend == "pytorch" and not test_env.has_pytorch:
+            pytest.skip("PyTorch not available")
+        if backend == "jax" and not test_env.has_jax:
+            pytest.skip("JAX not available")
+        # Test implementation
+```
+
 ## Migration Strategy
 
 ### Backward Compatibility
@@ -366,7 +522,7 @@ class TPUTester:
 - Provide deprecation warnings for removed features
 
 **Gradual Migration Path**:
-1. Install JAX alongside PyTorch
+1. Install JAX alongside PyTorch using optional dependencies
 2. Use feature flags to enable JAX backend
 3. Run parallel validation during transition
 4. Deprecate PyTorch backend after validation
@@ -377,9 +533,32 @@ class TPUTester:
 ```python
 class BackendConfig:
     def __init__(self):
-        self.backend = os.environ.get('CAYLEYPY_BACKEND', 'jax')
+        self.dependency_manager = DependencyManager()
+        self.backend = self._select_backend()
         self.device = os.environ.get('CAYLEYPY_DEVICE', 'auto')
         self.enable_jit = os.environ.get('CAYLEYPY_JIT', 'true').lower() == 'true'
+    
+    def _select_backend(self) -> str:
+        # Priority: environment variable > available backends > error
+        env_backend = os.environ.get('CAYLEYPY_BACKEND')
+        if env_backend:
+            if env_backend in self.dependency_manager.available_backends:
+                return env_backend
+            else:
+                raise RuntimeError(f"Requested backend '{env_backend}' not available. "
+                                 f"Install with: {self.dependency_manager.get_install_command('auto')}")
+        
+        # Auto-select best available backend
+        if self.dependency_manager.available_backends.get('jax-tpu'):
+            return 'jax'
+        elif self.dependency_manager.available_backends.get('jax-gpu'):
+            return 'jax'
+        elif self.dependency_manager.available_backends.get('pytorch'):
+            return 'pytorch'
+        elif self.dependency_manager.available_backends.get('jax-cpu'):
+            return 'jax'
+        else:
+            raise RuntimeError("No compatible backend found. Install JAX or PyTorch.")
         
     def get_graph_class(self):
         if self.backend == 'pytorch':

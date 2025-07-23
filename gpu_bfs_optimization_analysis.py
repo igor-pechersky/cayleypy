@@ -13,8 +13,9 @@ import torch
 import numpy as np
 from contextlib import contextmanager
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 from cayleypy import CayleyGraph, PermutationGroups
+
 
 @contextmanager
 def timer(description):
@@ -23,14 +24,15 @@ def timer(description):
     end = time.perf_counter()
     print(f"{description}: {(end - start) * 1000:.1f} ms")
 
+
 def analyze_problem_characteristics():
     """Analyze the specific characteristics of S_n with all transpositions."""
     print("=== PROBLEM CHARACTERISTICS ANALYSIS ===\n")
-    
+
     for n in [12, 13, 14, 15]:
         num_generators = n * (n - 1) // 2
         total_states = math.factorial(n)
-        
+
         print(f"S_{n}:")
         print(f"  Generators: {num_generators} transpositions")
         print(f"  Total states: {total_states:,}")
@@ -40,90 +42,92 @@ def analyze_problem_characteristics():
         print(f"  Expected diameter: ~{n-1} (theoretical)")
         print()
 
+
 def profile_current_implementation():
     """Profile the current BFS implementation to identify bottlenecks."""
     print("=== CURRENT IMPLEMENTATION PROFILING ===\n")
-    
+
     # Test with smaller n first
     n = 8  # Start small for profiling
     graph_def = PermutationGroups.all_transpositions(n)
-    
+
     for device in ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]:
         print(f"Device: {device}")
-        
+
         graph = CayleyGraph(graph_def, device=device, verbose=1)
-        
+
         print(f"  Generators: {graph.definition.n_generators}")
         print(f"  String encoder: {graph.string_encoder is not None}")
         print(f"  Encoded state size: {graph.encoded_state_size}")
         print(f"  Batch size: {graph.batch_size}")
-        
+
         # Profile individual operations
         start_state = graph.encode_states(graph.central_state)
-        
+
         with timer("  Initial neighbor generation"):
             neighbors = graph.get_neighbors(start_state)
-        
+
         print(f"    Generated {len(neighbors)} neighbors")
-        
+
         with timer("  Hash computation"):
             hashes = graph.hasher.make_hashes(neighbors)
-        
+
         with timer("  Unique state extraction"):
             unique_states, unique_hashes = graph._get_unique_states(neighbors, hashes)
-        
+
         print(f"    Unique states: {len(unique_states)}")
-        
+
         # Profile full BFS
         with timer("  Full BFS (limited diameter)"):
             result = graph.bfs(max_diameter=5)
-        
+
         print(f"    Explored {result.num_vertices} states")
         print()
+
 
 def identify_bottlenecks():
     """Identify specific bottlenecks in the GPU implementation."""
     print("=== BOTTLENECK ANALYSIS ===\n")
-    
+
     bottlenecks = [
         {
             "name": "Neighbor Generation",
             "description": "Sequential loop over generators in get_neighbors()",
             "impact": "High - O(n²) generators for all_transpositions",
-            "gpu_issue": "Poor GPU utilization due to sequential processing"
+            "gpu_issue": "Poor GPU utilization due to sequential processing",
         },
         {
             "name": "torch.gather Operations",
             "description": "Individual gather operations for each generator",
             "impact": "High - n(n-1)/2 separate gather calls per layer",
-            "gpu_issue": "Memory bandwidth limited, not compute limited"
+            "gpu_issue": "Memory bandwidth limited, not compute limited",
         },
         {
             "name": "Unique State Extraction",
             "description": "torch.unique() operation for deduplication",
             "impact": "Critical - Known to be slow on GPU",
-            "gpu_issue": "Not well optimized for GPU, especially large tensors"
+            "gpu_issue": "Not well optimized for GPU, especially large tensors",
         },
         {
             "name": "Hash-based Deduplication",
             "description": "Multiple isin_via_searchsorted calls",
             "impact": "High - Grows with number of layers",
-            "gpu_issue": "Binary search not optimal for GPU parallelism"
+            "gpu_issue": "Binary search not optimal for GPU parallelism",
         },
         {
             "name": "Memory Transfers",
             "description": "Frequent CPU-GPU transfers for hash operations",
             "impact": "Medium - Depends on hasher implementation",
-            "gpu_issue": "Transfer overhead dominates for small operations"
+            "gpu_issue": "Transfer overhead dominates for small operations",
         },
         {
             "name": "Batching Overhead",
             "description": "Complex batching logic with multiple tensor operations",
             "impact": "Medium - Only for large layers",
-            "gpu_issue": "Reduces parallelism, increases complexity"
-        }
+            "gpu_issue": "Reduces parallelism, increases complexity",
+        },
     ]
-    
+
     for i, bottleneck in enumerate(bottlenecks, 1):
         print(f"{i}. {bottleneck['name']}")
         print(f"   Description: {bottleneck['description']}")
@@ -131,10 +135,11 @@ def identify_bottlenecks():
         print(f"   GPU Issue: {bottleneck['gpu_issue']}")
         print()
 
+
 def propose_optimizations():
     """Propose specific optimizations for GPU performance."""
     print("=== OPTIMIZATION PROPOSALS ===\n")
-    
+
     optimizations = [
         {
             "name": "Vectorized Neighbor Generation",
@@ -152,7 +157,7 @@ neighbors = torch.gather(states_expanded, 2, all_generators.unsqueeze(0).expand(
 neighbors = neighbors.reshape(-1, n)  # Flatten to (batch * n_gen, n)
             """,
             "expected_speedup": "5-10x for neighbor generation",
-            "memory_impact": "Higher peak memory usage"
+            "memory_impact": "Higher peak memory usage",
         },
         {
             "name": "Custom CUDA Kernel for Transpositions",
@@ -187,7 +192,7 @@ __global__ void apply_transpositions_kernel(
 }
             """,
             "expected_speedup": "10-20x for neighbor generation",
-            "memory_impact": "Minimal"
+            "memory_impact": "Minimal",
         },
         {
             "name": "Hash-based Deduplication with GPU Hash Table",
@@ -206,7 +211,7 @@ class GPUHashSet:
         return self.hash_table.contains(hashes)
             """,
             "expected_speedup": "3-5x for deduplication",
-            "memory_impact": "Fixed hash table size"
+            "memory_impact": "Fixed hash table size",
         },
         {
             "name": "Fused Neighbor-Hash-Deduplicate Kernel",
@@ -229,7 +234,7 @@ __global__ void neighbor_hash_dedupe_kernel(
 }
             """,
             "expected_speedup": "20-50x overall",
-            "memory_impact": "Reduced due to fusion"
+            "memory_impact": "Reduced due to fusion",
         },
         {
             "name": "Streaming/Pipelined Processing",
@@ -255,7 +260,7 @@ class StreamedBFS:
         return self.merge_results()
             """,
             "expected_speedup": "2-3x with good overlap",
-            "memory_impact": "Multiple buffers needed"
+            "memory_impact": "Multiple buffers needed",
         },
         {
             "name": "Memory Pool and Tensor Reuse",
@@ -278,55 +283,56 @@ class TensorPool:
         self.pools[key].append(tensor)
             """,
             "expected_speedup": "1.5-2x reduction in allocation overhead",
-            "memory_impact": "Higher peak usage, better reuse"
-        }
+            "memory_impact": "Higher peak usage, better reuse",
+        },
     ]
-    
+
     for i, opt in enumerate(optimizations, 1):
         print(f"{i}. {opt['name']}")
         print(f"   Description: {opt['description']}")
         print(f"   Expected Speedup: {opt['expected_speedup']}")
         print(f"   Memory Impact: {opt['memory_impact']}")
         print(f"   Implementation:")
-        for line in opt['implementation'].strip().split('\n'):
+        for line in opt["implementation"].strip().split("\n"):
             print(f"     {line}")
         print()
+
 
 def estimate_performance_gains():
     """Estimate potential performance improvements."""
     print("=== PERFORMANCE GAIN ESTIMATES ===\n")
-    
+
     current_bottlenecks = {
         "Neighbor Generation": 40,  # % of total time
         "Unique/Deduplication": 35,
         "Hash Operations": 15,
-        "Memory Operations": 10
+        "Memory Operations": 10,
     }
-    
+
     optimization_gains = {
         "Vectorized Neighbors": {"Neighbor Generation": 0.1},  # 10x speedup
         "Custom CUDA Kernel": {"Neighbor Generation": 0.05},  # 20x speedup
         "GPU Hash Table": {"Unique/Deduplication": 0.2, "Hash Operations": 0.3},  # 5x, 3x
         "Fused Kernel": {"Neighbor Generation": 0.02, "Unique/Deduplication": 0.1, "Hash Operations": 0.1},
-        "Memory Pool": {"Memory Operations": 0.5}  # 2x speedup
+        "Memory Pool": {"Memory Operations": 0.5},  # 2x speedup
     }
-    
+
     print("Current bottleneck breakdown:")
     for operation, percentage in current_bottlenecks.items():
         print(f"  {operation}: {percentage}%")
     print()
-    
+
     print("Optimization scenarios:")
-    
+
     scenarios = [
         ("Conservative (Vectorized + GPU Hash)", ["Vectorized Neighbors", "GPU Hash Table"]),
         ("Aggressive (Custom Kernel + Fused)", ["Custom CUDA Kernel", "Fused Kernel"]),
-        ("Complete (All optimizations)", list(optimization_gains.keys()))
+        ("Complete (All optimizations)", list(optimization_gains.keys())),
     ]
-    
+
     for scenario_name, optimizations in scenarios:
         print(f"\n{scenario_name}:")
-        
+
         # Calculate new times
         new_times = current_bottlenecks.copy()
         for opt in optimizations:
@@ -334,20 +340,21 @@ def estimate_performance_gains():
                 for operation, factor in optimization_gains[opt].items():
                     if operation in new_times:
                         new_times[operation] *= factor
-        
+
         total_old = sum(current_bottlenecks.values())
         total_new = sum(new_times.values())
         speedup = total_old / total_new
-        
+
         print(f"  Overall speedup: {speedup:.1f}x")
         print(f"  New breakdown:")
         for operation, time in new_times.items():
             print(f"    {operation}: {time:.1f}%")
 
+
 def implementation_roadmap():
     """Provide implementation roadmap."""
     print("\n=== IMPLEMENTATION ROADMAP ===\n")
-    
+
     phases = [
         {
             "phase": "Phase 1: Quick Wins (1-2 weeks)",
@@ -355,10 +362,10 @@ def implementation_roadmap():
                 "Implement vectorized neighbor generation",
                 "Add tensor pooling for memory reuse",
                 "Optimize batch processing parameters",
-                "Profile and tune existing operations"
+                "Profile and tune existing operations",
             ],
             "expected_gain": "2-3x speedup",
-            "risk": "Low"
+            "risk": "Low",
         },
         {
             "phase": "Phase 2: GPU Hash Table (2-3 weeks)",
@@ -366,10 +373,10 @@ def implementation_roadmap():
                 "Integrate cuco or similar GPU hash table library",
                 "Replace torch.unique with GPU hash operations",
                 "Implement efficient seen-state tracking",
-                "Add memory management for hash tables"
+                "Add memory management for hash tables",
             ],
             "expected_gain": "5-8x speedup",
-            "risk": "Medium - external dependency"
+            "risk": "Medium - external dependency",
         },
         {
             "phase": "Phase 3: Custom CUDA Kernels (3-4 weeks)",
@@ -377,33 +384,34 @@ def implementation_roadmap():
                 "Write specialized transposition kernel",
                 "Implement fused neighbor-hash-dedupe kernel",
                 "Add streaming/pipelined processing",
-                "Extensive testing and validation"
+                "Extensive testing and validation",
             ],
             "expected_gain": "10-20x speedup",
-            "risk": "High - complex CUDA development"
-        }
+            "risk": "High - complex CUDA development",
+        },
     ]
-    
+
     for phase in phases:
         print(f"{phase['phase']}")
         print(f"  Expected Gain: {phase['expected_gain']}")
         print(f"  Risk Level: {phase['risk']}")
         print("  Tasks:")
-        for task in phase['tasks']:
+        for task in phase["tasks"]:
             print(f"    - {task}")
         print()
+
 
 def main():
     print("GPU BFS Optimization Analysis for Large Symmetric Groups")
     print("=" * 60)
-    
+
     analyze_problem_characteristics()
     profile_current_implementation()
     identify_bottlenecks()
     propose_optimizations()
     estimate_performance_gains()
     implementation_roadmap()
-    
+
     print("=" * 60)
     print("SUMMARY:")
     print("- Current implementation has significant GPU optimization opportunities")
@@ -411,6 +419,7 @@ def main():
     print("- Conservative optimizations could provide 5-10x speedup")
     print("- Aggressive CUDA kernel development could achieve 20-50x speedup")
     print("- Implementation should be phased to balance risk and reward")
+
 
 if __name__ == "__main__":
     main()

@@ -71,7 +71,23 @@ This specification outlines the conversion of CayleyPy from PyTorch/CUDA to JAX/
 5. IF compilation fails THEN informative error messages SHALL guide users to fix issues
 6. WHEN XLA optimization is possible THEN it SHALL be enabled by default for supported operations
 
-### Requirement 6: Device Management and Scalability
+### Requirement 6: Intelligent Dependency Management
+
+**User Story:** As a CayleyPy user, I want JAX dependencies to be managed intelligently with optional dependency sections (similar to the existing `torch` section) so that I can install and use the library on both TPU (like v3-8) and non-TPU (like L4, A100) devices without dependency conflicts.
+
+#### Acceptance Criteria
+
+1. WHEN installing with `pip install cayleypy[jax-cpu]` THEN JAX with CPU-only support SHALL be installed
+2. WHEN installing with `pip install cayleypy[jax-cuda]` THEN JAX with CUDA/GPU support SHALL be installed for devices like L4 and A100
+3. WHEN installing with `pip install cayleypy[jax-tpu]` THEN JAX with TPU support SHALL be installed for devices like v3-8
+4. WHEN installing with `pip install cayleypy[jax]` THEN the most appropriate JAX variant SHALL be automatically selected based on detected hardware
+5. WHEN JAX dependencies are missing THEN informative error messages SHALL guide users to install appropriate extras (e.g., "Install with pip install cayleypy[jax-cuda] for GPU support")
+6. WHEN multiple JAX variants are available THEN the system SHALL automatically select the optimal backend (TPU > GPU > CPU priority)
+7. WHEN dependency conflicts occur THEN clear resolution instructions SHALL be provided with specific pip install commands
+8. WHEN PyTorch dependencies exist alongside JAX THEN both SHALL coexist without conflicts for gradual migration
+9. IF hardware detection fails THEN fallback installation instructions SHALL be provided for manual selection
+
+### Requirement 7: Device Management and Scalability
 
 **User Story:** As a user with access to multiple compute devices, I want CayleyPy to intelligently manage and scale across available TPU, GPU, and CPU resources, so that I can maximize computational throughput.
 
@@ -84,20 +100,22 @@ This specification outlines the conversion of CayleyPy from PyTorch/CUDA to JAX/
 5. IF device failures occur THEN graceful error handling and recovery SHALL be implemented
 6. WHEN scaling to larger problems THEN memory usage SHALL scale efficiently with problem size
 
-### Requirement 7: Testing and Validation Framework
+### Requirement 8: Environment-Aware Testing Framework
 
-**User Story:** As a CayleyPy contributor, I want comprehensive tests that validate the JAX conversion maintains mathematical correctness and performance, so that I can confidently deploy the new implementation.
+**User Story:** As a CayleyPy contributor, I want comprehensive tests that work across all environments (CPU, GPU/PyTorch, GPU/JAX, TPU/JAX) and automatically skip irrelevant tests, so that I can maintain code quality across different deployment scenarios.
 
 #### Acceptance Criteria
 
-1. WHEN mathematical operations are performed THEN results SHALL be numerically identical to PyTorch implementation
-2. WHEN performance benchmarks are run THEN JAX implementation SHALL meet or exceed PyTorch performance
-3. WHEN edge cases are tested THEN all existing test cases SHALL pass without modification
-4. WHEN new JAX-specific features are added THEN corresponding tests SHALL be implemented
-5. IF numerical differences exist THEN they SHALL be within acceptable floating-point precision tolerances
-6. WHEN continuous integration runs THEN all tests SHALL pass on CPU, GPU, and TPU environments
+1. WHEN tests run on CPU-only environments THEN GPU and TPU specific tests SHALL be automatically skipped
+2. WHEN tests run on GPU environments THEN TPU-specific tests SHALL be skipped and GPU tests SHALL execute
+3. WHEN tests run on TPU environments THEN all relevant tests SHALL execute including TPU-specific optimizations
+4. WHEN PyTorch is unavailable THEN PyTorch-specific tests SHALL be skipped with appropriate markers
+5. WHEN JAX is unavailable THEN JAX-specific tests SHALL be skipped with informative messages
+6. WHEN mathematical operations are performed THEN results SHALL be numerically identical across available backends
+7. WHEN performance benchmarks are run THEN they SHALL adapt to available hardware and skip unsupported configurations
+8. WHEN continuous integration runs THEN test results SHALL clearly indicate which environment configurations were tested
 
-### Requirement 8: Documentation and Migration Guide
+### Requirement 9: Documentation and Migration Guide
 
 **User Story:** As a CayleyPy user transitioning to the JAX version, I want clear documentation and migration guidance, so that I can understand the benefits and any necessary changes to my workflow.
 

@@ -21,38 +21,38 @@
     - Create unit tests comparing hash outputs with PyTorch implementation
     - _Requirements: 1.2, 3.2, 4.1, 5.1_
 
-- [ ] 3. Convert state encoding and decoding systems
-  - [ ] 3.1 Implement JAX string encoder
+- [x] 3. Convert state encoding and decoding systems
+  - [x] 3.1 Implement JAX string encoder
     - Convert `StringEncoder` class to use JAX arrays and operations
     - Add vectorized encoding/decoding with `jax.vmap`
     - Implement JIT compilation for encoding functions
     - Write unit tests to verify encoding/decoding equivalence with PyTorch
     - _Requirements: 1.2, 2.3, 4.2, 5.2_
 
-  - [ ] 3.2 Create permutation and matrix generator systems
+  - [x] 3.2 Create permutation and matrix generator systems
     - Implement JAX-based permutation application using advanced indexing
     - Convert matrix generator operations to JAX with batch processing
     - Add JIT compilation for generator application functions
     - Write unit tests for generator operations across different group types
     - _Requirements: 1.2, 2.3, 4.2, 5.1_
 
-- [ ] 4. Implement core CayleyGraph functionality
-  - [ ] 4.1 Create JAX CayleyGraph class structure
+- [x] 4. Implement core CayleyGraph functionality
+  - [x] 4.1 Create JAX CayleyGraph class structure
     - Implement `JAXCayleyGraph` class with identical public API to PyTorch version
     - Set up device management and memory allocation in constructor
     - Implement state encoding/decoding methods using JAX backend
     - Write unit tests for basic graph initialization and state operations
     - _Requirements: 2.1, 2.2, 2.3, 1.1_
 
-  - [ ] 4.2 Implement neighbor generation and path operations
+  - [x] 4.2 Implement neighbor generation and path operations
     - Convert `get_neighbors` method to use JAX with vectorized operations
     - Implement `apply_path` method with JAX generator applications
     - Add JIT compilation for neighbor computation functions
     - Write unit tests comparing neighbor generation with PyTorch implementation
     - _Requirements: 2.3, 4.2, 5.1, 7.1_
 
-- [ ] 5. Convert BFS algorithm to JAX
-  - [ ] 5.1 Implement core BFS loop with JAX operations
+- [-] 5. Convert BFS algorithm to JAX
+  - [-] 5.1 Implement core BFS loop with JAX operations
     - Convert main BFS iteration loop to use JAX arrays and operations
     - Implement unique state detection using JAX tensor operations
     - Add memory-efficient batching for large state spaces
@@ -126,47 +126,81 @@
     - Write device-specific integration tests
     - _Requirements: 3.1, 6.1, 6.2, 7.2_
 
-- [ ] 10. Integrate backend selection and configuration
-  - [ ] 10.1 Create backend configuration system
-    - Implement environment variable-based backend selection
-    - Add runtime backend switching with feature flags
-    - Create configuration validation and error reporting
-    - Write unit tests for configuration management and backend selection
-    - _Requirements: 2.6, 1.1, 1.3_
+- [x] 10. Implement intelligent dependency management system
+  - [x] 10.1 Create dependency detection and management utilities
+    - Implement `DependencyManager` class with runtime backend detection
+    - Add hardware detection for CPU, GPU (CUDA), and TPU environments
+    - Create installation recommendation system based on detected hardware
+    - Write unit tests for dependency detection across different environments
+    - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-  - [ ] 10.2 Implement backward compatibility layer
+  - [x] 10.2 Update pyproject.toml with optional JAX dependencies
+    - Create separate optional dependency groups for jax-cpu, jax-cuda, jax-tpu
+    - Add convenience meta-packages for common installation patterns
+    - Implement proper version constraints and compatibility requirements
+    - Write installation tests for different dependency combinations
+    - _Requirements: 6.1, 6.2, 6.3, 6.5_
+
+- [ ] 11. Create environment-aware testing framework
+  - [ ] 11.1 Implement test environment detection system
+    - Create `TestEnvironment` class for runtime hardware/software detection
+    - Implement pytest markers for different backend and hardware requirements
+    - Add automatic test skipping based on available dependencies
+    - Write tests for test environment detection and marker generation
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
+
+  - [ ] 11.2 Update existing tests with environment awareness
+    - Add appropriate pytest markers to all existing tests
+    - Implement parametrized tests that adapt to available backends
+    - Create backend equivalence tests that skip unavailable backends
+    - Update CI configuration to report tested environment combinations
+    - _Requirements: 8.1, 8.2, 8.3, 8.6, 8.7, 8.8_
+
+- [ ] 12. Integrate backend selection and configuration
+  - [ ] 12.1 Create intelligent backend configuration system
+    - Implement enhanced `BackendConfig` with dependency-aware backend selection
+    - Add automatic backend selection with priority system (TPU > GPU > CPU)
+    - Create informative error messages with installation instructions
+    - Write unit tests for configuration management and backend selection
+    - _Requirements: 2.6, 1.1, 1.3, 6.4, 6.5, 6.6_
+
+  - [ ] 12.2 Implement backward compatibility layer
     - Create compatibility shims for deprecated PyTorch features
     - Add deprecation warnings for removed functionality
     - Implement gradual migration path with parallel validation
     - Write integration tests for backward compatibility
     - _Requirements: 2.1, 2.2, 2.4, 2.6_
 
-- [ ] 11. Update documentation and create migration guide
-  - [ ] 11.1 Update API documentation
+- [ ] 13. Update documentation and create migration guide
+  - [ ] 13.1 Update API documentation
     - Update docstrings to reflect JAX backend and TPU capabilities
     - Add performance notes and TPU-specific optimization guidance
     - Create examples demonstrating JAX-specific features
-    - Write troubleshooting guide for common JAX/TPU issues
-    - _Requirements: 8.1, 8.2, 8.4, 8.5_
+    - Write troubleshooting guide for common JAX/TPU issues and dependency management
+    - Document installation instructions for different environments (TPU, GPU, CPU)
+    - _Requirements: 9.1, 9.2, 9.4, 9.5, 6.4, 6.6_
 
-  - [ ] 11.2 Create comprehensive migration guide
+  - [ ] 13.2 Create comprehensive migration guide
     - Write step-by-step migration instructions from PyTorch to JAX
     - Document performance comparisons and benchmarking results
     - Create examples showing before/after code patterns
     - Add best practices guide for TPU optimization
-    - _Requirements: 8.2, 8.3, 8.6_
+    - Include dependency management and installation guide for different environments
+    - _Requirements: 9.2, 9.3, 9.6, 6.1, 6.2, 6.3_
 
-- [ ] 12. Final integration and validation
-  - [ ] 12.1 Perform end-to-end integration testing
-    - Run full test suite on CPU, GPU, and TPU environments
-    - Validate performance targets and scalability requirements
+- [ ] 14. Final integration and validation
+  - [ ] 14.1 Perform end-to-end integration testing
+    - Run full test suite on CPU, GPU, and TPU environments with environment-aware skipping
+    - Validate performance targets and scalability requirements across available hardware
     - Test all public API methods for backward compatibility
     - Perform memory usage and performance profiling
-    - _Requirements: 3.1, 6.6, 7.1, 7.2, 7.6_
+    - Validate dependency management and installation across different environments
+    - _Requirements: 3.1, 7.6, 8.1, 8.2, 8.6, 8.7, 8.8_
 
-  - [ ] 12.2 Optimize and finalize implementation
+  - [ ] 14.2 Optimize and finalize implementation
     - Profile and optimize critical performance bottlenecks
     - Fine-tune TPU memory usage and sharding strategies
     - Validate numerical accuracy across all test cases
     - Prepare final release with comprehensive documentation
-    - _Requirements: 3.1, 3.3, 6.6, 7.5_
+    - Validate dependency management works correctly in production environments
+    - _Requirements: 3.1, 3.3, 7.6, 8.5, 6.5, 6.6_
