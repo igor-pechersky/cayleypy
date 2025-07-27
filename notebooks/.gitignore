@@ -1,0 +1,14 @@
+# Jupyter Notebook
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Jupyter outputs (uncomment if you want to exclude all outputs)
+# *.ipynb
+
+# Temporary files
+.DS_Store
+Thumbs.db
