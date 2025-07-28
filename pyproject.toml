@@ -29,13 +29,31 @@ dependencies = [
 ]
 
 # Development dependencies
-# pip install .[torch,lint,test,dev,docs]
+# pip install .[torch,jax,jax-gpu,jax-tpu,lint,test,dev,docs]
 [project.optional-dependencies]
 torch = [
     # torch is required, but it is optional here because if it is  in dependencies,
     # Kaggle would spend several minutes installing some dependencies, even though
     # it has torch installed.
     "torch"
+]
+jax = [
+    # JAX and Flax NNX for CPU acceleration (base installation)
+    "jax>=0.4.20",
+    "flax>=0.10.0",
+    "optax>=0.2.0",
+]
+jax-gpu = [
+    # JAX with CUDA support for GPU acceleration
+    "jax[cuda12]>=0.4.20",
+    "flax>=0.10.0",
+    "optax>=0.2.0",
+]
+jax-tpu = [
+    # JAX with TPU support for TPU acceleration
+    "jax[tpu]>=0.7.0",
+    "flax>=0.10.0",
+    "optax>=0.2.0",
 ]
 lint = [
     "black",
@@ -65,6 +83,10 @@ docs = [
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.packages.find]
+include = ["cayleypy*"]
+exclude = ["notebooks*"]
+
 [tool.setuptools.package-data]
 "cayleypy" = ["data/*.csv", "puzzles/gap_files/**"]
 
@@ -85,6 +107,15 @@ module = ["h5py.*"]
 ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["kagglehub.*"]
+ignore_missing_imports = true
+[[tool.mypy.overrides]]
+module = ["jax.*"]
+ignore_missing_imports = true
+[[tool.mypy.overrides]]
+module = ["flax.*"]
+ignore_missing_imports = true
+[[tool.mypy.overrides]]
+module = ["optax.*"]
 ignore_missing_imports = true
 
 [tool.pylint."FORMAT"]

@@ -15,7 +15,10 @@
 ## Optional Dependencies
 - **torch**: PyTorch for neural network models (optional to avoid Kaggle installation delays)
 - **networkx**: Graph analysis and visualization (dev dependency)
-- **JAX**: GPU/TPU acceleration support
+- **JAX**: GPU/TPU acceleration support with hardware-specific installations:
+  - `cayleypy[jax]`: CPU-only JAX >=0.4.20
+  - `cayleypy[jax-gpu]`: GPU JAX with CUDA 12 >=0.4.20
+  - `cayleypy[jax-tpu]`: TPU JAX >=0.7.0
 
 ## Development Tools
 - **Black**: Code formatting (line length: 120)
@@ -35,7 +38,9 @@
 ```bash
 git clone https://github.com/cayleypy/cayleypy.git
 cd cayleypy
-pip install -e .[torch,lint,test,dev,docs]
+pip install -e .[torch,jax,lint,test,dev,docs]  # CPU JAX
+# OR for GPU: pip install -e .[torch,jax-gpu,lint,test,dev,docs]
+# OR for TPU: pip install -e .[torch,jax-tpu,lint,test,dev,docs]
 ```
 
 ### Code Quality
@@ -63,3 +68,36 @@ coverage run -m pytest && coverage html  # Generate coverage report
 - Leverage JAX for GPU/TPU acceleration when available
 - Implement efficient bit manipulation for large state spaces
 - Use hash functions for duplicate removal in beam search
+## JAX
+/NNX Development Guidelines
+
+### Code Quality Standards
+- Use `# pylint: disable=broad-exception-caught` for hardware detection and graceful fallback scenarios
+- Use `# pylint: disable=global-statement` for singleton pattern implementations
+- Use `# type: ignore` for optional JAX imports when JAX is not available
+- Always use lazy % formatting in logging functions instead of f-strings
+
+### Import Patterns
+```python
+try:
+    import jax
+    from flax import nnx
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
+    jax = None  # type: ignore
+    nnx = None  # type: ignore
+```
+
+### Testing Patterns
+```python
+@pytest.mark.skipif(not JAX_AVAILABLE, reason="JAX not available")
+class TestJAXFeatures:
+    def test_feature(self):
+        # Test implementation
+```
+
+### Type Annotations
+- Use `Optional[Dict[str, Any]]` for dataclass fields that may be None
+- Use `Dict[str, Any]` for return types that may contain mixed value types
+- Always check for None before indexing optional tuple/list fields
