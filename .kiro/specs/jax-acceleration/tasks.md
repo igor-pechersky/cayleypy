@@ -7,7 +7,7 @@ pyenv # Implementation Plan
   - Create device availability detection with fallback mechanisms
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 2. Implement core NNX tensor operations module
+- [x] 2. Implement core NNX tensor operations module
   - Create TensorOpsModule as NNX module with state management
   - Implement unique_with_indices with caching using NNX Variables
   - Add isin_via_searchsorted with NNX JIT optimization
