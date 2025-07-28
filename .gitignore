@@ -13,3 +13,4 @@ docs/_build
 docs/generated
 
 .python-version
+.DS_Store
