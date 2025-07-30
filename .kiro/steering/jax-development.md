@@ -168,71 +168,44 @@ if mesh_shape is not None and len(self.devices) != mesh_shape[0]:
     # Safe to index mesh_shape[0]
 ```
 
-## Hybrid Device Architecture
+## TPU v6e Native int64 Support
 
-### TPU int64 Limitations
-TPUs do not support int64 operations. Handle this with hybrid device orchestration:
-
-```python
-class HybridCayleyGraphBackend:
-    def choose_device_for_operation(self, operation_type: str, data_size: int):
-        """Intelligently choose device based on operation characteristics."""
-        if operation_type == "hash_computation" and data_size > 10000:
-            # Large hashing operations: use CPU for int64 compatibility
-            return self.cpu_backend
-        elif operation_type == "tensor_operations":
-            # Tensor operations: prefer TPU for parallelism
-            return self.tpu_backend
-        elif operation_type == "neural_network":
-            # Neural network inference: TPU optimal
-            return self.tpu_backend
-        else:
-            return self.cpu_backend
-```
-
-### State Representation for TPU
-Use int32-compatible state encoding for TPU operations:
+### Direct int64 Operations
+TPU v6e (Trillium) supports int64 operations natively when x64 is enabled:
 
 ```python
-class TPUCompatibleStateEncoder:
-    def encode_for_tpu(self, states: jnp.ndarray) -> jnp.ndarray:
-        """Encode states for TPU-compatible operations."""
-        if self.state_size <= 2**15:  # Safe margin for int32
-            return states.astype(jnp.int32)
-        else:
-            return self._chunk_encode(states)
-```
-
-### Hierarchical Hashing Strategy
-Implement two-phase hashing for TPU compatibility:
-
-```python
-class HierarchicalHasher:
-    def deduplicate_states(self, states: jnp.ndarray) -> jnp.ndarray:
-        """Two-phase deduplication: TPU filtering + CPU precision."""
-        # Phase 1: TPU-based quick filtering
-        encoded_states = self.encoder.encode_for_tpu(states)
-        quick_hashes = self.tpu_hasher.hash_batch(encoded_states)
-        filtered_states = states[self._get_unique_indices_tpu(quick_hashes)]
+class TPUBackend:
+    def __init__(self):
+        # Enable native int64 support on TPU v6e
+        jax.config.update("jax_enable_x64", True)
         
-        # Phase 2: CPU-based precise deduplication
-        if len(filtered_states) > 1000:
-            precise_hashes = self.cpu_hasher.hash_batch(filtered_states)
-            return filtered_states[self._get_unique_indices_cpu(precise_hashes)]
-        
-        return filtered_states
+        # Test int64 support
+        test_array = jnp.array([1, 2, 3], dtype=jnp.int64)
+        assert test_array.dtype == jnp.int64
 ```
 
-### Device-Specific Error Handling
-Handle TPU-specific errors gracefully:
+### Native int64 Hashing
+Use direct int64 operations on TPU without conversion:
+
+```python
+class TPUHasher:
+    def hash_state(self, state: jnp.ndarray) -> jnp.int64:
+        """Hash single state using native int64 operations on TPU."""
+        return jnp.sum(
+            state.astype(jnp.int64) * self.hash_matrix[:, 0]
+        ) % (2**63 - 1)
+```
+
+### Simplified Error Handling
+With native int64 support, error handling is simplified:
 
 ```python
 try:
-    # TPU operation that might fail due to int64
-    result = tpu_operation(data)
+    # TPU operation with native int64 support
+    result = tpu_operation(data.astype(jnp.int64))
 except Exception as e:  # pylint: disable=broad-exception-caught
-    if "UNIMPLEMENTED" in str(e) and "X64 element types" in str(e):
-        # Known TPU limitation - fallback to CPU
+    # Fallback to CPU only if TPU is unavailable
+    if "TPU not available" in str(e):
         result = cpu_operation(data)
     else:
         raise
