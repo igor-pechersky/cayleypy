@@ -15,21 +15,24 @@ pyenv # Implementation Plan
   - Add vectorized_element_wise_equal with performance tracking
   - _Requirements: 2.1, 2.2, 4.1_
 
-- [ ] 3. Create NNX hash functions with advanced state management
-  - Implement NNXStateHasher as NNX Module with Parameter hash matrix
-  - Add hash result caching using NNX Variables
-  - Implement statistics tracking for cache hits and performance metrics
-  - Create OptimizedNNXStateHasher with memory-efficient chunked processing
-  - Add hash_large_batch with NNX scan for efficient iteration
+- [x] 3. Create hybrid NNX hash functions with TPU compatibility and device orchestration
+  - Implement NNXStateHasher with TPU-compatible int32 operations and CPU int64 fallback
+  - Add TPUQuickHasher for fast approximate hashing using polynomial int32 operations
+  - Create HierarchicalHasher with two-phase deduplication (TPU filtering + CPU precision)
+  - Implement device-specific hash strategies based on backend capabilities
+  - Add comprehensive caching with device-aware cache key generation
+  - Create OptimizedNNXStateHasher with intelligent chunking and memory management
+  - Add automatic device selection based on hash operation characteristics
   - _Requirements: 2.2, 4.2, 4.4_
 
-- [ ] 4. Develop NNX BFS implementation with stateful processing
-  - Create NNXBFSModule with comprehensive state management
-  - Implement _apply_generators using nested NNX vmap operations
-  - Add _bfs_step with tensor operations integration
-  - Create initialize_bfs and step methods for iterative processing
-  - Implement run_full_bfs with performance metrics collection
-  - Add nnx_bfs function with automatic fallback to CPU implementation
+- [ ] 4. Develop hybrid NNX BFS implementation with intelligent device orchestration
+  - Create HybridCayleyGraphBackend for optimal device selection based on operation type
+  - Implement TPUCompatibleStateEncoder for int32-compatible state representation
+  - Create HierarchicalHasher with TPU quick filtering and CPU precise deduplication
+  - Develop HybridNNXBFS with TPU tensor operations and CPU hash management
+  - Add TPUGeneratorModule for vectorized generator application on TPU
+  - Implement automatic device switching based on data size and operation characteristics
+  - Add comprehensive fallback mechanisms for TPU int64 limitations
   - _Requirements: 1.1, 1.2, 4.1_
 
 - [ ] 5. Implement unified NNX predictor system with multiple architectures
@@ -48,14 +51,14 @@ pyenv # Implementation Plan
   - Implement model checkpointing and state persistence
   - _Requirements: 2.3, 5.2_
 
-- [ ] 7. Develop NNX beam search with integrated neural network predictor
-  - Create NNXBeamSearchModule with integrated predictor and hasher
-  - Implement _expand_beam using nested NNX vmap for generator application
-  - Add _deduplicate_states with hash-based deduplication and metrics
-  - Create _score_and_select with integrated predictor calls
-  - Implement initialize_search and step methods for iterative search
-  - Add search method with comprehensive result tracking
-  - Create nnx_beam_search function with automatic fallback
+- [ ] 7. Develop hybrid NNX beam search with intelligent device orchestration
+  - Create HybridBeamSearch with TPU predictor scoring and CPU hash management
+  - Implement smart device selection for expansion, deduplication, and scoring operations
+  - Add TPU-optimized state expansion with int32-compatible operations
+  - Create hierarchical deduplication: TPU quick filtering + CPU precise hash checking
+  - Implement neural network predictor integration optimized for TPU inference
+  - Add comprehensive performance monitoring across device boundaries
+  - Create automatic fallback mechanisms for TPU limitations
   - _Requirements: 2.1, 2.2, 2.3_
 
 - [ ] 8. Add comprehensive error handling and fallback mechanisms
@@ -138,10 +141,28 @@ pyenv # Implementation Plan
   - Implement hardware-specific optimizations for GPU and TPU
   - _Requirements: 4.2, 4.4_
 
-- [ ] 18. Create final integration and validation
-  - Integrate all NNX components into unified acceleration system
+- [ ] 18. Implement TPU-specific optimizations and compatibility layers
+  - Create TPUCompatibilityLayer for handling int64 limitations
+  - Implement state chunking strategies for large permutation groups
+  - Add TPU-optimized polynomial hashing with collision detection
+  - Create memory-efficient batch processing for TPU constraints
+  - Implement automatic precision downgrading with accuracy preservation
+  - Add TPU-specific performance profiling and optimization
+  - _Requirements: 4.1, 4.2, 4.4_
+
+- [ ] 19. Create hybrid device orchestration system
+  - Implement DeviceOrchestrator for intelligent operation routing
+  - Add cost-benefit analysis for device switching decisions
+  - Create data transfer optimization between TPU and CPU
+  - Implement load balancing across available devices
+  - Add device capability detection and operation mapping
+  - Create performance monitoring across device boundaries
+  - _Requirements: 3.1, 3.2, 3.3_
+
+- [ ] 20. Create final integration and validation
+  - Integrate all hybrid NNX components into unified acceleration system
   - Perform comprehensive validation against existing implementations
-  - Create final performance benchmarks and optimization
-  - Add final documentation and examples
+  - Create performance benchmarks comparing pure vs hybrid approaches
+  - Add final documentation and examples for hybrid architecture
   - Implement deployment and distribution preparation
   - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.4, 5.1, 5.2, 5.3_

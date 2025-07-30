@@ -167,3 +167,73 @@ Always check for None before indexing optional fields:
 if mesh_shape is not None and len(self.devices) != mesh_shape[0]:
     # Safe to index mesh_shape[0]
 ```
+
+## Hybrid Device Architecture
+
+### TPU int64 Limitations
+TPUs do not support int64 operations. Handle this with hybrid device orchestration:
+
+```python
+class HybridCayleyGraphBackend:
+    def choose_device_for_operation(self, operation_type: str, data_size: int):
+        """Intelligently choose device based on operation characteristics."""
+        if operation_type == "hash_computation" and data_size > 10000:
+            # Large hashing operations: use CPU for int64 compatibility
+            return self.cpu_backend
+        elif operation_type == "tensor_operations":
+            # Tensor operations: prefer TPU for parallelism
+            return self.tpu_backend
+        elif operation_type == "neural_network":
+            # Neural network inference: TPU optimal
+            return self.tpu_backend
+        else:
+            return self.cpu_backend
+```
+
+### State Representation for TPU
+Use int32-compatible state encoding for TPU operations:
+
+```python
+class TPUCompatibleStateEncoder:
+    def encode_for_tpu(self, states: jnp.ndarray) -> jnp.ndarray:
+        """Encode states for TPU-compatible operations."""
+        if self.state_size <= 2**15:  # Safe margin for int32
+            return states.astype(jnp.int32)
+        else:
+            return self._chunk_encode(states)
+```
+
+### Hierarchical Hashing Strategy
+Implement two-phase hashing for TPU compatibility:
+
+```python
+class HierarchicalHasher:
+    def deduplicate_states(self, states: jnp.ndarray) -> jnp.ndarray:
+        """Two-phase deduplication: TPU filtering + CPU precision."""
+        # Phase 1: TPU-based quick filtering
+        encoded_states = self.encoder.encode_for_tpu(states)
+        quick_hashes = self.tpu_hasher.hash_batch(encoded_states)
+        filtered_states = states[self._get_unique_indices_tpu(quick_hashes)]
+        
+        # Phase 2: CPU-based precise deduplication
+        if len(filtered_states) > 1000:
+            precise_hashes = self.cpu_hasher.hash_batch(filtered_states)
+            return filtered_states[self._get_unique_indices_cpu(precise_hashes)]
+        
+        return filtered_states
+```
+
+### Device-Specific Error Handling
+Handle TPU-specific errors gracefully:
+
+```python
+try:
+    # TPU operation that might fail due to int64
+    result = tpu_operation(data)
+except Exception as e:  # pylint: disable=broad-exception-caught
+    if "UNIMPLEMENTED" in str(e) and "X64 element types" in str(e):
+        # Known TPU limitation - fallback to CPU
+        result = cpu_operation(data)
+    else:
+        raise
+```

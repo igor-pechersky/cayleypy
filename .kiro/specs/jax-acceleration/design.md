@@ -2,47 +2,219 @@
 
 ## Overview
 
-This design document outlines the implementation of JAX support for GPU/TPU acceleration in CayleyPy. The solution will provide seamless integration of JAX's high-performance computing capabilities while maintaining backward compatibility with existing CPU-based implementations. The design leverages JAX's JIT compilation, vectorization, and hardware-specific optimizations to achieve significant performance improvements for large-scale graph operations.
+This design document outlines the implementation of JAX support for GPU/TPU acceleration in CayleyPy using a **hybrid device orchestration architecture**. The solution addresses the fundamental challenge that **TPUs do not support int64 operations**, which are essential for CayleyPy's hash-based algorithms. Instead of forcing all operations onto a single device, the design intelligently orchestrates operations across TPU, GPU, and CPU based on their respective strengths and limitations.
+
+The hybrid approach achieves optimal performance by:
+- Using **TPU** for massive parallel tensor operations, neural network inference, and int32-compatible computations
+- Using **CPU** for precise int64 hashing, complex logic, and dynamic data structures  
+- Using **GPU** as a flexible middle ground and fallback option
+- Implementing **hierarchical processing pipelines** that combine the strengths of multiple devices
 
 ## Architecture
 
 ### Core Components
 
-#### 1. NNX-Centric Backend System
-- **NNXBackend**: Central configuration using Flax NNX's device management
-- **NNX Device Mesh**: Leverage NNX's distributed computing capabilities
-- **NNX State Management**: Use NNX's automatic state handling for all operations
+#### 1. Hybrid Device Orchestration System
+- **HybridCayleyGraphBackend**: Intelligent device selection based on operation characteristics
+- **DeviceOrchestrator**: Cost-benefit analysis for optimal device routing
+- **DataTransferOptimizer**: Efficient data movement between devices
+- **HybridErrorHandler**: Graceful fallback mechanisms for device limitations
 
-#### 2. NNX-Accelerated Core Operations
-- **NNX Functional Modules**: Replace raw JAX operations with NNX functional modules
-- **NNX Hash Modules**: Stateful hash functions implemented as NNX modules
-- **NNX BFS Modules**: BFS algorithms as composable NNX modules
-- **NNX Beam Search**: Beam search implemented as stateful NNX modules
+#### 2. TPU-Compatible State Management
+- **TPUCompatibleStateEncoder**: Int32-compatible state representation for TPU operations
+- **MultiDeviceStateEncoder**: Device-specific state encoding and precision management
+- **StateChunking**: Efficient handling of large permutation groups on TPU
+- **PrecisionManager**: Automatic precision selection based on device capabilities
 
-#### 3. Unified NNX Neural Network Integration
-- **NNX Predictor Ecosystem**: All predictors as NNX modules with shared infrastructure
-- **NNX Training Pipeline**: Unified training system using NNX transforms
-- **NNX State Persistence**: Automatic checkpointing and state management
+#### 3. Hierarchical Processing Pipelines
+- **HierarchicalHasher**: Two-phase deduplication (TPU quick filtering + CPU precise hashing)
+- **HybridNNXBFS**: TPU tensor operations with CPU hash management
+- **HybridBeamSearch**: TPU predictor scoring with CPU state deduplication
+- **MultiStageProcessor**: Coordinated processing across device boundaries
 
-#### 4. NNX Memory and Optimization Management
-- **NNX Sharding**: Use NNX's built-in sharding for memory management
-- **NNX Transforms**: Leverage NNX's jit, vmap, and other transforms
-- **NNX Checkpointing**: Built-in gradient checkpointing and memory optimization
+#### 4. NNX-Accelerated Core Operations with Device Awareness
+- **TPUGeneratorModule**: Vectorized generator application optimized for TPU int32 operations
+- **TPUQuickHasher**: Fast approximate hashing using polynomial int32 operations
+- **HybridTensorOps**: Device-aware tensor operations with automatic fallback
+- **CrossDeviceCache**: Intelligent caching across device boundaries
+
+### Hybrid Architecture Principles
+
+#### Device Specialization Strategy
+
+**TPU Strengths & Use Cases:**
+- Massive parallel tensor operations (matrix multiplications, vectorized computations)
+- Neural network inference and training
+- Large-scale batch processing with static shapes
+- Fast approximate algorithms using int32 operations
+
+**TPU Limitations & Workarounds:**
+- No int64 operations → Use hierarchical hashing with int32 quick filtering
+- Static tensor shapes required → Pre-allocate buffers and use chunking
+- Limited dynamic memory → Use CPU for dynamic data structures
+- No native hash tables → Use CPU for precise deduplication
+
+**CPU Strengths & Use Cases:**
+- Full int64 support for precise hashing and state representation
+- Dynamic data structures (hash tables, sets, variable-length arrays)
+- Complex control flow and conditional logic
+- Flexible memory management and garbage collection
+
+**GPU Strengths & Use Cases:**
+- Balanced parallelism with flexibility
+- Support for both int32 and int64 operations
+- Dynamic memory allocation with good performance
+- Optimal fallback when TPU/CPU specialization isn't beneficial
+
+#### Intelligent Operation Routing
+
+The system automatically routes operations to optimal devices based on:
+
+1. **Data Characteristics**: Size, precision requirements, shape constraints
+2. **Operation Type**: Tensor operations, hashing, neural networks, control flow
+3. **Performance History**: Learned optimal device assignments
+4. **Resource Availability**: Current device utilization and memory usage
+5. **Transfer Costs**: Cost-benefit analysis of cross-device data movement
+
+#### Hierarchical Processing Pattern
+
+Many algorithms use a multi-stage approach:
+
+1. **Stage 1 (TPU)**: Fast approximate filtering/processing using int32 operations
+2. **Stage 2 (GPU)**: Intermediate processing if needed for medium-scale operations  
+3. **Stage 3 (CPU)**: Precise final processing using int64 operations and complex logic
+
+This pattern maximizes throughput while maintaining accuracy.
 
 ## Components and Interfaces
 
-### NNX Backend System
+### Hybrid Backend System
 
 ```python
 from flax import nnx
 import jax
 from jax.sharding import Mesh, NamedSharding, PartitionSpec
+from typing import Dict, Any, Optional
+
+class HybridCayleyGraphBackend(nnx.Module):
+    """Hybrid backend that orchestrates operations across TPU, GPU, and CPU."""
+    
+    def __init__(self, rngs: Optional[nnx.Rngs] = None):
+        # Initialize individual device backends
+        self.tpu_backend = self._create_device_backend("tpu", rngs)
+        self.gpu_backend = self._create_device_backend("gpu", rngs) 
+        self.cpu_backend = self._create_device_backend("cpu", rngs)
+        
+        # Device orchestration components
+        self.orchestrator = DeviceOrchestrator(self)
+        self.transfer_optimizer = DataTransferOptimizer(self)
+        self.error_handler = HybridErrorHandler(self)
+        
+        # Performance monitoring
+        self.performance_monitor = HybridPerformanceMonitor()
+        
+        # Device capability matrix
+        self.capabilities = nnx.Variable(self._build_capability_matrix())
+    
+    def choose_device_for_operation(self, operation_type: str, 
+                                   data_characteristics: Dict[str, Any]) -> str:
+        """Intelligently choose device based on operation and data characteristics."""
+        
+        # Check cached recommendations first
+        cache_key = f"{operation_type}_{hash(str(sorted(data_characteristics.items())))}"
+        if cache_key in self.orchestrator.recommendation_cache:
+            return self.orchestrator.recommendation_cache[cache_key]
+        
+        # Analyze operation requirements
+        if operation_type == "hash_computation":
+            if data_characteristics.get("requires_int64", False) or \
+               data_characteristics.get("size", 0) > 10000:
+                return "cpu"  # CPU for precise int64 hashing
+            else:
+                return "tpu"  # TPU for fast int32 approximate hashing
+        
+        elif operation_type == "tensor_operations":
+            if data_characteristics.get("static_shape", True) and \
+               data_characteristics.get("size", 0) > 1000:
+                return "tpu"  # TPU for large static tensor operations
+            else:
+                return "gpu"  # GPU for dynamic or smaller operations
+        
+        elif operation_type == "neural_network":
+            return "tpu"  # TPU optimal for neural network operations
+        
+        elif operation_type == "deduplication":
+            if data_characteristics.get("approximate_ok", False):
+                return "tpu"  # TPU for quick approximate deduplication
+            else:
+                return "cpu"  # CPU for precise deduplication
+        
+        else:
+            return "cpu"  # Safe default fallback
+    
+    def execute_with_optimal_device(self, operation: callable, data: jnp.ndarray,
+                                   operation_type: str) -> jnp.ndarray:
+        """Execute operation on optimal device with automatic fallback."""
+        
+        # Analyze data characteristics
+        data_characteristics = {
+            "size": data.size,
+            "shape": data.shape,
+            "dtype": data.dtype,
+            "static_shape": len(data.shape) > 0 and all(s > 0 for s in data.shape),
+            "requires_int64": data.dtype == jnp.int64 or operation_type == "hash_computation"
+        }
+        
+        # Choose optimal device
+        optimal_device = self.choose_device_for_operation(operation_type, data_characteristics)
+        
+        # Execute with fallback handling
+        return self.error_handler.execute_with_fallback(
+            operation, data, optimal_device
+        )
+    
+    def _create_device_backend(self, device_type: str, rngs: Optional[nnx.Rngs]) -> Optional[NNXBackend]:
+        """Create backend for specific device type."""
+        try:
+            return NNXBackend(preferred_device=device_type, rngs=rngs)
+        except Exception:  # pylint: disable=broad-exception-caught
+            return None  # Device not available
+    
+    def _build_capability_matrix(self) -> Dict[str, Dict[str, bool]]:
+        """Build matrix of device capabilities."""
+        return {
+            "tpu": {
+                "int32_operations": True,
+                "int64_operations": False,
+                "dynamic_shapes": False,
+                "large_tensors": True,
+                "neural_networks": True,
+                "hash_tables": False
+            },
+            "gpu": {
+                "int32_operations": True,
+                "int64_operations": True,
+                "dynamic_shapes": True,
+                "large_tensors": True,
+                "neural_networks": True,
+                "hash_tables": False
+            },
+            "cpu": {
+                "int32_operations": True,
+                "int64_operations": True,
+                "dynamic_shapes": True,
+                "large_tensors": False,
+                "neural_networks": False,
+                "hash_tables": True
+            }
+        }
 
 class NNXBackend(nnx.Module):
-    """NNX-based backend for hardware acceleration and state management."""
+    """Single-device NNX backend (used by HybridCayleyGraphBackend)."""
     
-    def __init__(self, preferred_device: str = "auto", rngs: nnx.Rngs = None):
+    def __init__(self, preferred_device: str = "auto", rngs: Optional[nnx.Rngs] = None):
         self.device_type = self._detect_device(preferred_device)
+        self.devices = jax.devices(self.device_type)
         self.mesh = self._create_device_mesh()
         self.sharding = self._setup_sharding()
         self.config = nnx.Variable(self._setup_optimization_flags())
