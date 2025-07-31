@@ -1,9 +1,66 @@
 ---
 inclusion: fileMatch
-fileMatchPattern: '*jax*|*nnx*'
+fileMatchPattern: '*jax*|*nnx*|*tpu*'
 ---
 
 # JAX/NNX Development Guidelines for CayleyPy
+
+## MANDATORY: Use Flax NNX for All Neural Network Components
+
+**ALL neural network implementations MUST use Flax NNX (Next Generation) instead of legacy Flax or other frameworks.**
+
+### Required NNX Patterns
+- Use `nnx.Module` as base class for all neural network components
+- Use `nnx.Variable` for mutable state management
+- Use `nnx.Param` for trainable parameters
+- Use `nnx.jit` for compilation instead of raw `jax.jit`
+- Use `nnx.Rngs` for random number generation
+
+### Example NNX Module Structure
+```python
+class TPUTensorOpsModule(nnx.Module):
+    """NNX module for TPU-accelerated tensor operations."""
+    
+    def __init__(self, backend: TPUBackend, rngs: Optional[nnx.Rngs] = None):
+        self.backend = backend
+        self.metrics = nnx.Variable({
+            'operations_count': 0,
+            'total_elements_processed': 0
+        })
+    
+    @nnx.jit
+    def operation(self, x: jnp.ndarray) -> jnp.ndarray:
+        # Implementation using NNX patterns
+        pass
+```
+
+## MANDATORY: Consult MCP Servers for Implementation
+
+**ALWAYS consult these MCP servers before implementing JAX/NNX code:**
+
+### Required MCP Server Consultations
+1. **context7**: For up-to-date JAX and Flax NNX documentation
+   - Query for latest NNX patterns and best practices
+   - Verify API compatibility and method signatures
+   - Check for recent changes in NNX architecture
+
+2. **web-search-serper**: For current JAX/NNX examples and community practices
+   - Search for recent NNX implementation examples
+   - Find TPU v6e optimization techniques
+   - Locate performance benchmarking approaches
+
+### Consultation Workflow
+```python
+# 1. First consult context7 for official documentation
+# Query: "Flax NNX Module implementation patterns"
+# Query: "JAX TPU v6e int64 support"
+
+# 2. Then consult web-search-serper for community examples
+# Search: "Flax NNX TPU implementation examples 2024"
+# Search: "JAX TPU v6e native int64 operations"
+
+# 3. Implement based on gathered information
+```
 
 ## Import Handling
 
@@ -32,6 +89,28 @@ except ImportError:
 - Add `# type: ignore` comments for None assignments to imported modules
 - Use explicit type annotations for variables that might have different types based on JAX availability
 
+### Unused Parameter Handling
+When parameters are required by the interface but not used in the implementation, explicitly delete them:
+
+```python
+def __init__(self, backend: TPUBackend, rngs: Optional[nnx.Rngs] = None):
+    del rngs  # Unused parameter - explicitly delete to silence warnings
+    # Implementation continues...
+```
+
+### Import Cleanup
+Remove unused imports to avoid linting warnings:
+
+```python
+# Only import what you actually use
+from typing import Optional, Dict, Any  # Remove Tuple if not used
+
+# If imports are needed for type annotations but not runtime, use TYPE_CHECKING
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Tuple  # Only imported for type checking
+```
+
 ## Exception Handling
 
 ### Broad Exception Catching
@@ -51,6 +130,23 @@ Use broad exception catching appropriately for:
 - Optional feature initialization
 - Graceful degradation scenarios
 - Cross-platform compatibility
+
+### Exception Chaining
+Always use `from e` when re-raising exceptions to maintain the exception chain:
+
+```python
+# Correct - maintains exception chain
+try:
+    backend = TPUBackend()
+except Exception as e:
+    raise RuntimeError(f"TPU backend initialization failed: {e}") from e
+
+# Incorrect - breaks exception chain
+try:
+    backend = TPUBackend()
+except Exception as e:
+    raise RuntimeError(f"TPU backend initialization failed: {e}")
+```
 
 ### Global State Management
 When using global variables for singleton patterns, add pylint disable comments:
@@ -77,6 +173,17 @@ metrics_dict = {
 self.metrics = nnx.Variable(metrics_dict)
 ```
 
+### Type Annotations for NNX Variables
+Always provide explicit type annotations for NNX Variables to avoid mypy errors:
+
+```python
+# Correct - explicit type annotation
+self.operation_cache: nnx.Variable[Dict[str, Any]] = nnx.Variable({})
+
+# Incorrect - missing type annotation (causes mypy error)
+self.operation_cache = nnx.Variable({})
+```
+
 ### Accessing Variable Values
 Always check for JAX availability when accessing Variable values:
 
@@ -85,6 +192,18 @@ if JAX_AVAILABLE and hasattr(self.metrics, "value"):
     metrics: Dict[str, Any] = dict(self.metrics.value)
 else:
     metrics = dict(self.metrics)
+```
+
+### Type Casting for Dictionary Values
+When accessing dictionary values that might be objects, cast them appropriately:
+
+```python
+# Correct - explicit type annotation for dictionary value
+hbm_per_chip: Any = self.capabilities.value["hbm_per_chip_gb"]
+total_memory_gb = len(self.devices) * float(hbm_per_chip)
+
+# Incorrect - direct float conversion of object (causes mypy error)
+total_memory_gb = len(self.devices) * float(self.capabilities.value["hbm_per_chip_gb"])
 ```
 
 ## Logging Best Practices
@@ -100,6 +219,49 @@ self.logger.info("Backend initialized with %d %s device(s)", len(devices), devic
 self.logger.info(f"Backend initialized with {len(devices)} {device_type} device(s)")
 ```
 
+### Logger Initialization
+Always use the full method name for logger initialization:
+
+```python
+# Correct
+self.logger = logging.getLogger(__name__)
+
+# Incorrect (will cause mypy/pylint errors)
+self.logger = logging.getL  # Truncated method name
+```
+
+## String Handling
+
+### Avoid Implicit String Concatenation
+Use explicit string concatenation or multi-line strings:
+
+```python
+# Correct - explicit concatenation
+raise ImportError(
+    "JAX and Flax are required for TPU backend. "
+    "Install with: pip install 'cayleypy[jax-tpu]'"
+)
+
+# Incorrect - implicit concatenation
+raise ImportError(
+    "JAX and Flax are required for TPU backend. " "Install with: pip install 'cayleypy[jax-tpu]'"
+)
+```
+
+### F-string Usage
+Only use f-strings when there are actual interpolated variables:
+
+```python
+# Correct - has interpolated variables
+print(f"TPU v6e Backend initialized with {len(self.devices)} devices")
+
+# Incorrect - no interpolated variables
+print(f"Native int64 support: VERIFIED ✓")  # Should be regular string
+
+# Correct alternative
+print("Native int64 support: VERIFIED ✓")
+```
+
 ## Testing Patterns
 
 ### JAX Availability Checks
@@ -112,6 +274,17 @@ class TestJAXFeatures:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         # Test implementation
+```
+
+### Unused Variable Handling in Tests
+When variables are created for testing but not used in assertions, explicitly delete them:
+
+```python
+def test_backend_initialization(self):
+    """Test backend can be initialized."""
+    backend = TPUBackend()
+    assert backend.is_available
+    del backend  # Silence unused variable warning
 ```
 
 ### Local Imports in Tests

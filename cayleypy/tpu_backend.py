@@ -43,8 +43,7 @@ class TPUBackend(nnx.Module):
     def __init__(self, config: Optional[TPUConfig] = None, rngs: Optional[nnx.Rngs] = None):
         if not JAX_AVAILABLE:
             raise ImportError(
-                "JAX and Flax are required for TPU backend. "
-                "Install with: pip install 'cayleypy[jax-tpu]'"
+                "JAX and Flax are required for TPU backend. " + "Install with: pip install 'cayleypy[jax-tpu]'"
             )
 
         self.config = nnx.Variable(config or TPUConfig())
@@ -204,8 +203,7 @@ def create_tpu_backend(config: Optional[TPUConfig] = None) -> TPUBackend:
     """Factory function to create TPU backend with error handling."""
     if not JAX_AVAILABLE:
         raise ImportError(
-            "JAX and Flax are not available. TPU acceleration requires: "
-            "pip install 'cayleypy[jax-tpu]'"
+            "JAX and Flax are not available. TPU acceleration requires: " + "pip install 'cayleypy[jax-tpu]'"
         )
 
     try:

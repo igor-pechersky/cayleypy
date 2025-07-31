@@ -1,13 +1,13 @@
 # Implementation Plan
 
-- [-] 1. Set up TPU backend with native int64 support
+- [x] 1. Set up TPU backend with native int64 support
   - Create TPUBackend NNX module with automatic x64 enablement
   - Implement TPUConfig with jax.config.update("jax_enable_x64", True)
   - Add TPU v6e capability detection and device initialization
   - Create global backend instance with proper error handling
   - _Requirements: 1.1, 3.1, 3.3_
 
-- [-] 2. Implement TPU tensor operations module with int64 support
+- [x] 2. Implement TPU tensor operations module with int64 support
   - Create TPUTensorOpsModule as NNX module with state management
   - Implement unique_with_indices with native int64 operations
   - Add isin with TPU-optimized membership testing
