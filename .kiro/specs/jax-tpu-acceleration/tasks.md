@@ -25,7 +25,7 @@
   - Create hash performance statistics and collision tracking
   - _Requirements: 2.2, 4.4_
 
-- [ ] 4. Develop TPU BFS implementation with NNX state management
+- [x] 4. Develop TPU BFS implementation with NNX state management
   - Create TPUBFSModule as NNX module with integrated state tracking
   - Implement expand_layer using TPU v6e's 256x256 systolic array
   - Add bfs_step with native int64 hash operations
@@ -34,7 +34,7 @@
   - Add comprehensive performance metrics and memory tracking
   - _Requirements: 1.1, 1.2, 1.4_
 
-- [ ] 5. Implement TPU beam search with integrated neural networks
+- [x] 5. Implement TPU beam search with integrated neural networks
   - Create TPUBeamSearchModule with NNX state management
   - Implement expand_beam using TPU's vectorization capabilities
   - Add deduplicate_states with native int64 precision

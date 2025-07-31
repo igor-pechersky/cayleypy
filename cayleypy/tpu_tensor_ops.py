@@ -192,8 +192,31 @@ class TPUTensorOpsModule(nnx.Module):
         self.metrics.value["deduplication_operations"] += 1
         self.metrics.value["int64_operations"] += 1
 
-        # Use JIT-compiled function
-        result = _deduplicate_int64_states_jit(states)
+        # Use a better hash function to avoid collisions
+        # This is a simple polynomial hash with a large prime
+        def better_hash(s):
+            prime = jnp.int64(1000000007)
+            hash_val = jnp.int64(0)
+            for i in range(len(s)):
+                hash_val = hash_val * prime + s[i].astype(jnp.int64)
+            return hash_val
+        
+        state_hashes = jax.vmap(better_hash)(states)
+        
+        # Get unique hashes and their indices, then filter out fill values
+        unique_hashes, unique_indices = self.unique_with_indices(state_hashes)
+        
+        # Filter out fill values (negative values from jnp.unique padding)
+        fill_value = jnp.iinfo(state_hashes.dtype).min
+        valid_mask = unique_hashes != fill_value
+        valid_indices = unique_indices[valid_mask]
+        
+        # Return states corresponding to valid unique indices
+        if len(valid_indices) > 0:
+            result = states[valid_indices]
+        else:
+            # Return empty array with correct shape
+            result = jnp.array([], dtype=jnp.int64).reshape(0, states.shape[1])
 
         # Update metrics
         self.metrics.value["operations_count"] += 1
