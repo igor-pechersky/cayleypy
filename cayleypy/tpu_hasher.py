@@ -24,6 +24,7 @@ except ImportError:
     nnx = None  # type: ignore
 
 from .tpu_backend import TPUBackend
+from .tpu_kernel_cache import TPUKernelCache, create_kernel_signature
 
 
 # JIT-compiled helper functions for TPU hashing operations
@@ -159,6 +160,9 @@ class TPUHasherModule(nnx.Module):
         # Optimal chunk size for TPU v6e's 32GB HBM
         self.optimal_chunk_size = nnx.Variable(100000)  # Leverage large HBM
 
+        # Initialize kernel cache for hash operations
+        self.kernel_cache = TPUKernelCache(backend, rngs=rngs)
+
         self.logger = logging.getLogger(__name__)
         self.logger.info(
             "TPU Hasher Module initialized with state_size=%d, use_splitmix64=%s", state_size, use_splitmix64
@@ -197,14 +201,32 @@ class TPUHasherModule(nnx.Module):
 
     def hash_batch(self, states: jnp.ndarray) -> jnp.ndarray:
         """Hash batch of states using TPU vectorization."""
+        # Create kernel signature for caching
+        hash_type = "splitmix64" if self.use_splitmix64 else "matrix"
+        signature = create_kernel_signature(
+            graph=None,  # Hash operations are graph-independent
+            operation_type=f"hash_batch_{hash_type}",
+            batch_size=len(states),
+            state_size=self.state_size,
+            dtype="int64",
+        )
+
+        # Get or compile cached kernel
+        def compile_hash_kernel():
+            if self.use_splitmix64:
+                return jax.jit(_hash_splitmix64_batch_jit)
+            else:
+                return jax.jit(_hash_batch_jit)
+
+        cached_kernel = self.kernel_cache.get_or_compile_kernel(signature, compile_hash_kernel)
+
+        # Use cached kernel
         if self.use_splitmix64:
-            # Use SplitMix64 for bit-encoded states
-            hashes = _hash_splitmix64_batch_jit(states, self.seed.value)
+            hashes = cached_kernel(states, self.seed.value)
             self.metrics.value["splitmix64_hashes"] += len(states)
         else:
-            # Use matrix multiplication for regular states
             if self.hash_matrix is not None:
-                hashes = _hash_batch_jit(states, self.hash_matrix.value)
+                hashes = cached_kernel(states, self.hash_matrix.value)
             else:
                 raise ValueError("Hash matrix is None for non-SplitMix64 hasher")
 

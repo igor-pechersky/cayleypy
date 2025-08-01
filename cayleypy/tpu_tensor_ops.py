@@ -20,6 +20,7 @@ except ImportError:
     nnx = None  # type: ignore
 
 from .tpu_backend import TPUBackend
+from .tpu_kernel_cache import TPUKernelCache, create_kernel_signature
 
 
 # JIT-compiled helper functions for TPU operations
@@ -119,6 +120,9 @@ class TPUTensorOpsModule(nnx.Module):
             rngs = nnx.Rngs(42)
         self.rngs = rngs
 
+        # Initialize kernel cache for tensor operations
+        self.kernel_cache = TPUKernelCache(backend, rngs=rngs)
+
         self.logger.info("TPU Tensor Operations Module initialized")
 
     def unique_with_indices(self, arr: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
@@ -127,8 +131,22 @@ class TPUTensorOpsModule(nnx.Module):
         if arr.dtype == jnp.int64:
             self.metrics.value["int64_operations"] += 1
 
-        # Use JIT-compiled function
-        unique_vals, unique_indices = _unique_with_indices_jit(arr)
+        # Create kernel signature for caching
+        signature = create_kernel_signature(
+            graph=None,  # Tensor operations are graph-independent
+            operation_type="unique_with_indices",
+            batch_size=len(arr),
+            dtype=str(arr.dtype),
+        )
+
+        # Get or compile cached kernel
+        def compile_unique_kernel():
+            return jax.jit(_unique_with_indices_jit)
+
+        cached_kernel = self.kernel_cache.get_or_compile_kernel(signature, compile_unique_kernel)
+
+        # Use cached kernel
+        unique_vals, unique_indices = cached_kernel(arr)
 
         # Update metrics
         self.metrics.value["operations_count"] += 1
@@ -200,17 +218,17 @@ class TPUTensorOpsModule(nnx.Module):
             for i in range(len(s)):
                 hash_val = hash_val * prime + s[i].astype(jnp.int64)
             return hash_val
-        
+
         state_hashes = jax.vmap(better_hash)(states)
-        
+
         # Get unique hashes and their indices, then filter out fill values
         unique_hashes, unique_indices = self.unique_with_indices(state_hashes)
-        
+
         # Filter out fill values (negative values from jnp.unique padding)
         fill_value = jnp.iinfo(state_hashes.dtype).min
         valid_mask = unique_hashes != fill_value
         valid_indices = unique_indices[valid_mask]
-        
+
         # Return states corresponding to valid unique indices
         if len(valid_indices) > 0:
             result = states[valid_indices]

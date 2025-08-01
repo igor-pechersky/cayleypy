@@ -61,9 +61,9 @@ def validate_numeric_correctness() -> Dict[str, Any]:
     
     # Test graphs with known results
     test_cases = [
-        (CayleyGraph(PermutationGroups.symmetric_group(4)), "S4", 8),
-        (CayleyGraph(PermutationGroups.alternating_group(4)), "A4", 10),
-        (CayleyGraph(PermutationGroups.dihedral_group(6)), "D6", 12),
+        (CayleyGraph(PermutationGroups.coxeter(4)), "S4_coxeter", 8),
+        (CayleyGraph(PermutationGroups.all_transpositions(4)), "S4_all_trans", 10),
+        (CayleyGraph(PermutationGroups.pancake(6)), "Pancake_6", 12),
     ]
     
     for graph, name, max_diameter in test_cases:
@@ -157,9 +157,9 @@ def validate_performance_improvement() -> Dict[str, Any]:
     
     # Performance test graphs
     perf_graphs = [
-        (CayleyGraph(PermutationGroups.symmetric_group(5)), "S5", 15),
-        (CayleyGraph(PermutationGroups.alternating_group(5)), "A5", 18),
-        (CayleyGraph(PermutationGroups.dihedral_group(10)), "D10", 20),
+        (CayleyGraph(PermutationGroups.coxeter(5)), "S5_coxeter", 15),
+        (CayleyGraph(PermutationGroups.all_transpositions(5)), "S5_all_trans", 18),
+        (CayleyGraph(PermutationGroups.pancake(7)), "Pancake_7", 20),
     ]
     
     speedups = []
@@ -236,7 +236,7 @@ def validate_memory_efficiency() -> Dict[str, Any]:
     }
     
     # Memory test with a medium-sized graph
-    test_graph = CayleyGraph(PermutationGroups.symmetric_group(5))
+    test_graph = CayleyGraph(PermutationGroups.coxeter(5))
     max_diameter = 15
     
     print(f"Testing memory usage on S5...")
